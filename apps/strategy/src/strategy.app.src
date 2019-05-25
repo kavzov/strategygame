@@ -1,0 +1,17 @@
+{application, strategy,
+ [{description, "A strategy game"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {mod, {strategy_app, []}},
+  {applications,
+   [kernel,
+    stdlib,
+    lager,
+    ranch
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {licenses, ["Apache 2.0"]},
+  {links, []}
+ ]}.
