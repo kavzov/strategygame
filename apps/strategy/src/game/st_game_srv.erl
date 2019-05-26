@@ -4,12 +4,13 @@
 -export([start_link/2, plr_cmd/3, stop_by_player_interrupt/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--define(PORT, 1234).
+-include("st_game.hrl").
+
 -define(SEP, <<" ">>).
 -define(ENDSTR, <<"\r\n">>).
 
--define(WIDTH, 3).
--define(HEIGHT, 3).
+-define(WIDTH, get_battle_field_width()).
+-define(HEIGHT, get_battle_field_height()).
 -define(INIT_POS, [1, ?WIDTH * ?HEIGHT]).
 -define(HSTEP, 1).
 -define(VSTEP, ?WIDTH).
@@ -33,10 +34,10 @@ start_link(Player1, Player2) ->
     gen_server:start_link(?MODULE, [Player1, Player2], []).
 
 plr_cmd(GameSrv, PlrSock, Cmd) ->
-    case st_game_maker:get_game(GameSrv) of
-        {ok, _Players} -> 
+    case maps:to_list(st_game_maker:get_game(GameSrv)) of
+        [_Game] -> 
             gen_server:call(GameSrv, {cmd, PlrSock, Cmd});
-        error ->
+        [] ->
             gen_tcp:send(PlrSock, <<"Have a little patience, please.\r\nWaiting for an opponent...\r\n">>)
     end.
 
@@ -91,14 +92,14 @@ init([P1_Sock, P2_Sock]) ->
     Controls = get_battle_controls(),
     Reply = #{P1_Sock => <<?ENDSTR/binary, "Welcome to the battle, ", P1_Name/binary, "!", ?ENDSTR/binary, "Your playing symbol - ", ?PL1/binary, ".", Controls/binary, Board/binary, YourMoveMsg/binary>>, P2_Sock => <<?ENDSTR/binary, "Welcome to the battle, ", P2_Name/binary, "!", ?ENDSTR/binary, "Your playing symbol - ", ?PL2/binary, ".", Controls/binary, Board/binary, ?WAITMOVE/binary>>},
 
-    st_game_maker:add_game(self(), Players),
+    % st_game_maker:add_game(self(), Players),
+    % st_game_maker:del_player_from_waitlist(P1_Sock),
+    % st_game_maker:del_player_from_waitlist(P2_Sock),
     lager:info("Players ~p and ~p started new game", [P1_Name, P2_Name]),
-    st_game_maker:del_player_from_waitlist(P1_Sock),
-    st_game_maker:del_player_from_waitlist(P2_Sock),
 
     send_info_to_players(Players, {'START_BATTLE', self()}),
     send_reply_to_players(Reply),
-    % send messages to all bet players
+    % TODO send messages to all bet players
     lager:info("Game started"),
 
     {ok, State}.
@@ -142,7 +143,8 @@ handle_call({cmd, PlrSock, Cmd}, _From, #state{board = BoardData, players = Play
                             WinnerName = maps:get(name, maps:get(WinnerSock, Players)),
                             LoserSock = get_opponent(WinnerSock, Que),
                             LoserName = maps:get(name, maps:get(LoserSock, Players)),
-                            Reply = #{WinnerSock => <<Board/binary, "You won the game, ", WinnerName/binary, "!", ?ENDSTR/binary>>, LoserSock => <<Board/binary, "You lost, ", LoserName/binary, ".", ?ENDSTR/binary>>},
+                            ServerMsg = server_msg(),
+                            Reply = #{WinnerSock => <<Board/binary, "You won the game, ", WinnerName/binary, "!", ?ENDSTR/binary, ServerMsg/binary>>, LoserSock => <<Board/binary, "You lost, ", LoserName/binary, ".", ?ENDSTR/binary, ServerMsg/binary>>},
                             send_reply_to_players(Reply),
                             stop_game(WinnerSock, LoserSock, Players),
                             lager:info("~p won the game.", [WinnerName]),
@@ -160,7 +162,8 @@ handle_call({cmd, PlrSock, Cmd}, _From, #state{board = BoardData, players = Play
                     WinnerSock = get_opponent(GaveupSock, Que),
                     WinnerName = maps:get(name, maps:get(WinnerSock, Players)),
                     GaveupName = maps:get(name, maps:get(GaveupSock, Players)),
-                    Reply = #{GaveupSock => <<"You lost, ", GaveupName/binary, ".", ?ENDSTR/binary>>, WinnerSock => <<"Your opponent ", GaveupName/binary, " has gave up.", ?ENDSTR/binary, "You won the game, ", WinnerName/binary, "!", ?ENDSTR/binary>>},
+                    ServerMsg = server_msg(),
+                    Reply = #{GaveupSock => <<"You lost, ", GaveupName/binary, ".", ?ENDSTR/binary, ServerMsg/binary>>, WinnerSock => <<"Your opponent ", GaveupName/binary, " has gave up.", ?ENDSTR/binary, "You won the game, ", WinnerName/binary, "!", ?ENDSTR/binary, ServerMsg/binary>>},
                     send_reply_to_players(Reply),
                     stop_game(WinnerSock, GaveupSock, Players),
                     lager:info("~p gave up. ~p won the game.", [GaveupName, WinnerName]),
@@ -229,7 +232,8 @@ check_move(up, BoardData, PlrCh, CurrPos) ->
     end;
 
 check_move(right, BoardData, PlrCh, CurrPos) ->
-    if (CurrPos rem ?WIDTH =:= 0) ->
+    Width= ?WIDTH,
+    if (CurrPos rem Width =:= 0) ->
         {error,  <<"border">>};
     true ->
         NewPos = CurrPos + ?HSTEP,
@@ -240,8 +244,9 @@ check_move(right, BoardData, PlrCh, CurrPos) ->
     end;
 
 check_move(down, BoardData, PlrCh, CurrPos) ->
+    Width= ?WIDTH, Height = ?HEIGHT,
     NewPos = CurrPos + ?VSTEP,
-    if (NewPos > ?HEIGHT * ?WIDTH) ->
+    if (NewPos > Height * Width) ->
         {error,  <<"border">>};
     true ->
         case lists:nth(NewPos, BoardData) of
@@ -251,8 +256,9 @@ check_move(down, BoardData, PlrCh, CurrPos) ->
     end;
 
 check_move(left, BoardData, PlrCh, CurrPos) ->
+    Width= ?WIDTH,
     NewPos = CurrPos - ?HSTEP,
-    if (CurrPos rem ?WIDTH =:= 1) ->
+    if (CurrPos rem Width =:= 1) ->
         {error,  <<"border">>};
     true ->
         case lists:nth(NewPos, BoardData) of
@@ -393,6 +399,14 @@ whose_move(PlrSock, PlrCh, PlrName, Que) ->
         true  -> get_your_move_msg(PlrCh, PlrName);
         false -> ?WAITMOVE
     end.
+
+get_battle_field_width() ->
+    {ok, Width} = application:get_env(strategy, battle_field_width),
+    Width.
+
+get_battle_field_height() ->
+    {ok, Height} = application:get_env(strategy, battle_field_width),
+    Height.
 
 get_battle_controls() ->
     Up = <<226,134,145>>, Right = <<226,134,146>>, Down = <<226,134,147>>, Left = <<226,134,144>>,

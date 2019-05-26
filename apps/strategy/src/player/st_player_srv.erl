@@ -60,6 +60,9 @@ handle_cast(_Request, #player{} = State) ->
 handle_info('SET_BATTLE_MODE', State) ->
     {noreply, State#state{mode = battle}};
 
+handle_info('SET_BET', State) ->
+    {noreply, State#state{mode = bet}};
+
 handle_info({'START_BATTLE', GameSrv}, State) ->
     {noreply, State#state{gamesrv = GameSrv}};
 
