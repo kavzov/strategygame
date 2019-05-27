@@ -75,7 +75,7 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 					loop(State);
 
 				{<<"list">>, ?SERVER_MODE} ->
-					Reply = handle_list(wait),
+					Reply = handle_list(),
 					Transport:send(Socket, Reply),
 					loop(State);
 				{<<"game ", WidthHeight/binary>>, ?SERVER_MODE} ->
@@ -89,7 +89,7 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 				{<<"play ", GameId/binary>>, ?SERVER_MODE} ->
 					case handle_play(GameId, PlayerSrv) of
 						start_game ->
-							PlayerSrv ! 'SET_BATTLE_MODE',
+							% PlayerSrv ! {'SET_BATTLE_MODE', GameSrv},
 							loop(State);
 						game_not_found ->
 							Transport:send(Socket, <<"There is no game number ", GameId/binary>>),
@@ -104,11 +104,11 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 					Transport:send(Socket, <<"Bye!\r\n">>),
 					st_player_storage:del_player(Socket),
 					ok = Transport:close(Socket);
-				{<<"bet ", CurrencyId/binary>>, ?SERVER_MODE} ->
-					% TODO handle Currency Id (1 or 2)
-					Reply = handle_bet(),
+				{<<"bet ", Bet/binary>>, ?SERVER_MODE} ->
+					% bet GameId PlayerId Amount Curreency
+					Reply = handle_bet(Bet),
 					Transport:send(Socket, Reply),
-					PlayerSrv ! 'SET_BET_MODE',
+					% PlayerSrv ! 'SET_BET_MODE',
 					loop(State);
 				{_Unknown, ?SERVER_MODE} ->
 					Reply = <<"Unknown command\r\n">>,
@@ -116,14 +116,10 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 					loop(State);
 
 				{Cmd, ?BATTLE_MODE} ->
-					st_game_srv:plr_cmd(GameSrv, Socket, string:lowercase(Cmd)),
-					loop(State);
-
-				{<<"list">>, ?BET_MODE} ->
-					Reply = handle_list(battle),
-					Transport:send(Socket, Reply),
-					loop(State);
-				{<<"bet ", >>}
+					if (GameSrv =:= false) -> ok;
+					true -> st_game_srv:plr_cmd(GameSrv, Socket, string:lowercase(Cmd))
+					end,
+					loop(State)
 			end;
 
 		{error, Error} ->
@@ -166,7 +162,6 @@ handle_game(PlayerSrv, WidthHeight) ->
 			fun(BinVal) -> side_size(binary_to_integer(BinVal)) end,
 			binary:split(WidthHeight, [<<"\r">>, <<"\n">>, <<" ">>], [global, trim_all])
 			),
-		application:set_env([{strategy, [{battle_field_width, Width}, {battle_field_height, Height}]}]),
 		st_game_maker:add_new_game(PlayerSrv,[Width, Height])
 	catch
 		throw:badsize -> {error, badsize};
@@ -177,11 +172,31 @@ handle_game(PlayerSrv, WidthHeight) ->
 handle_play(GameId, PlayerSrv) ->
 	st_game_maker:play_game(GameId, PlayerSrv).
 
+handle_bet(Bet) ->
+	Games = st_game_maker:get_games(battle),
+	try
+		[GameId, PlayerId, Amount, Currency] = binary:split(Bet, [<<" ">>], [global, trim_all]),
+		check_game_id(GameId, Games),
+		check_player_id(PlayerId, Games),
+		check_amount(Amount),
+		check_currency(Currency)
+		% st_bet_storage:add_bet()
+	catch
+		error:{badmatch, _} -> {error, badmatch};
+		throw:badgameid 	-> {error, badgameid};
+		throw:badplayerid 	-> {error, badplayerid}
+	end,
+	<<"ok\r\n">>.
 
-handle_bet() ->
+handle_list() ->
+	Wait = handle_list(wait),
+	Battles = handle_list(battle),
+	<<Wait/binary, Battles/binary>>.
+
+handle_list(battle) ->
 	Games = st_game_maker:get_games(battle),
 	HLine = <<"===================================\r\n">>,
-	StartList = <<"\r\nRunning games:\r\n", HLine/binary>>,
+	StartList = <<"\r\nRunning games available for bets:\r\n", HLine/binary>>,
 	Reply = maps:fold(
 		fun(GameId, Game, BinStr) ->
 			[Width, Height] = lists:map(fun(Val) -> integer_to_binary(Val) end, maps:get(size, Game)),
@@ -204,15 +219,12 @@ handle_bet() ->
 	case Reply of
 		StartList -> <<"\r\nThere is no games for bets.\r\nRefresh the list later.\r\n">>;
 		_ -> Reply
-	end.
-
-% handle_game(Socket, PlayerSrv) ->
-% 	st_game_maker:connect(Socket, PlayerSrv).
+	end;
 
 handle_list(wait) ->
 	Games = st_game_maker:get_games(wait),
 	HLine = <<"--------------------\r\n">>,
-	StartList = <<"\r\nWaiting players:\r\n", HLine/binary>>,
+	StartList = <<"\r\nWaiting players:\r\n====================\r\n">>,
 	Reply = maps:fold(
 		fun(GameId, Game, BinStr) ->
 			[Width, Height] = lists:map(fun(Val) -> integer_to_binary(Val) end, maps:get(size, Game)),
@@ -233,8 +245,7 @@ handle_list(wait) ->
 
 
 iodata_init_handle(Data) ->
-    % remove possible leading spacesauth 6BC4D6927DE71BA05CAA5CBF915D3FF2667BB2C847854B0676C46AACE50EC120
-
+    % remove possible leading spaces
     Data1 = re:replace(Data, <<"^ +">>, <<>>, [{return, binary}]),
     % remove trailing line break
     re:replace(Data1, <<"\r\n$">>, <<>>, [{return, binary}]).
@@ -244,7 +255,27 @@ side_size(Size) ->
 	true -> Size
 	end.
 
+check_game_id(GameId, Games) ->
+	case lists:member(GameId, maps:keys(Games)) of
+		true -> ok;
+		false -> throw(badgameid)
+	end.
 
+check_player_id(PlayerId, Games) ->
+	PlayersIds = maps:fold(
+		fun(_GameId, Game, Acc) -> Acc ++ maps:keys(maps:get(players, Game)) end,
+		[], Games
+	),
+	case lists:member(binary_to_integer(PlayerId), PlayersIds) of
+		true -> ok;
+		false -> throw(badplayerid)
+	end.
+
+check_amount(Amount) ->
+	ok.
+
+check_currency(Curreency) ->
+	ok.
 
 get_init_msg() ->
 	<<"
@@ -261,4 +292,5 @@ Hi! It's Polyana game.\r\nAuthenticate and play or go out)
 get_server_msg(Name, Rating) ->
 	ServerMsg = server_msg(),
 	WaitPlayers = handle_list(wait),
-	<<"Welcome, ", Name/binary, "!\r\nYour rating - ", Rating/binary, ".\r\n", WaitPlayers/binary, "\r\n", ServerMsg/binary>>.
+	BetBattles = handle_list(battle),
+	<<"\r\nWelcome, ", Name/binary, "!\r\nYour rating - ", Rating/binary, ".\r\n", WaitPlayers/binary, BetBattles/binary, ServerMsg/binary>>.

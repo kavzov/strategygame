@@ -52,6 +52,14 @@ init(_Args) ->
                 modules => [st_game_maker]
             },
             #{
+                id => st_bet_storage,
+                start => {st_bet_storage, start_link, []},
+                restart => permanent,
+                shutdown => 2000,
+                type => worker,
+                modules => [st_bet_storage]
+            },
+            #{
                 id => st_player_sup,
                 start => {st_player_sup, start_link, []},
                 restart => permanent,

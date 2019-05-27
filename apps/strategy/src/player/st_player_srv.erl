@@ -57,14 +57,11 @@ handle_call(_Request, _From, #player{} = State) ->
 handle_cast(_Request, #player{} = State) ->
     {noreply, State}.
 
-handle_info('SET_BATTLE_MODE', State) ->
-    {noreply, State#state{mode = battle}};
-
-handle_info('SET_BET', State) ->
-    {noreply, State#state{mode = bet}};
+handle_info({'SET_BATTLE_MODE', GameSrv}, State) ->
+    {noreply, State#state{mode = battle, gamesrv = GameSrv}};
 
 handle_info({'START_BATTLE', GameSrv}, State) ->
-    {noreply, State#state{gamesrv = GameSrv}};
+    {noreply, State#state{mode = battle, gamesrv = GameSrv}};
 
 handle_info('EXIT_BATTLE', State) ->
     {noreply, State#state{mode = server, gamesrv = false}};

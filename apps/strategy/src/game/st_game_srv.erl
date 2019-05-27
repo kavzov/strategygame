@@ -1,16 +1,13 @@
 -module(st_game_srv).
 -behaviour(gen_server).
 
--export([start_link/2, plr_cmd/3, stop_by_player_interrupt/2]).
+-export([start_link/3, plr_cmd/3, stop_by_player_interrupt/2]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("st_game.hrl").
 
 -define(SEP, <<" ">>).
 -define(ENDSTR, <<"\r\n">>).
-
--define(WIDTH, get_battle_field_width()).
--define(HEIGHT, get_battle_field_height()).
 -define(INIT_POS, [1, ?WIDTH * ?HEIGHT]).
 -define(HSTEP, 1).
 -define(VSTEP, ?WIDTH).
@@ -25,13 +22,14 @@
 
 -record(state, {
     board :: list(),
+    size :: list(),
     players :: map(),
     que  :: list()
 }).
 
 
-start_link(Player1, Player2) ->
-    gen_server:start_link(?MODULE, [Player1, Player2], []).
+start_link(Player1, Player2, BoardSize) ->
+    gen_server:start_link(?MODULE, [Player1, Player2, BoardSize], []).
 
 plr_cmd(GameSrv, PlrSock, Cmd) ->
     case maps:to_list(st_game_maker:get_game(GameSrv)) of
@@ -74,7 +72,7 @@ stop_game(WinnerSock, LoserSock, Players) ->
     ok.
 
 %% gen_server API
-init([P1_Sock, P2_Sock]) ->
+init([P1_Sock, P2_Sock, [Width, Height]]) ->
     {P1_ID, P1_Name, _P1_Rating, P1_Srv, _} = st_player_storage:get_player(P1_Sock),
     {P2_ID, P2_Name, _P2_Rating, P2_Srv, _} = st_player_storage:get_player(P2_Sock),
     Player_1 = #{id => P1_ID, name => P1_Name, srv => P1_Srv, ch => ?PL1, moves => []},
@@ -83,35 +81,32 @@ init([P1_Sock, P2_Sock]) ->
     Players = #{P1_Sock => Player_1, P2_Sock => Player_2},
     Que = [P1_Sock, P2_Sock],
 
-    BoardData = new_board(?WIDTH, ?HEIGHT),
-    Board = get_board(BoardData),
+    BoardData = new_board(Width, Height),
+    Board = get_board(BoardData, [Width, Height]),
 
-    State = #state{board = BoardData, players = Players, que = Que},
+    State = #state{board = BoardData, size = [Width, Height], players = Players, que = Que},
 
     YourMoveMsg = get_your_move_msg(?PL1, P1_Name),
     Controls = get_battle_controls(),
-    Reply = #{P1_Sock => <<?ENDSTR/binary, "Welcome to the battle, ", P1_Name/binary, "!", ?ENDSTR/binary, "Your playing symbol - ", ?PL1/binary, ".", Controls/binary, Board/binary, YourMoveMsg/binary>>, P2_Sock => <<?ENDSTR/binary, "Welcome to the battle, ", P2_Name/binary, "!", ?ENDSTR/binary, "Your playing symbol - ", ?PL2/binary, ".", Controls/binary, Board/binary, ?WAITMOVE/binary>>},
-
-    % st_game_maker:add_game(self(), Players),
-    % st_game_maker:del_player_from_waitlist(P1_Sock),
-    % st_game_maker:del_player_from_waitlist(P2_Sock),
+    Reply = #{
+        P1_Sock => <<?ENDSTR/binary, "Welcome to the battle, ", P1_Name/binary, "!", ?ENDSTR/binary, "Your playing symbol - ", ?PL1/binary, ".", Controls/binary, Board/binary, YourMoveMsg/binary>>,
+        P2_Sock => <<?ENDSTR/binary, "Welcome to the battle, ", P2_Name/binary, "!", ?ENDSTR/binary, "Your playing symbol - ", ?PL2/binary, ".", Controls/binary, Board/binary, ?WAITMOVE/binary>>
+    },
     lager:info("Players ~p and ~p started new game", [P1_Name, P2_Name]),
 
     send_info_to_players(Players, {'START_BATTLE', self()}),
     send_reply_to_players(Reply),
-    % TODO send messages to all bet players
-    lager:info("Game started"),
 
     {ok, State}.
 
 
-handle_call({cmd, PlrSock, Cmd}, _From, #state{board = BoardData, players = Players, que = Que} = State) ->
+handle_call({cmd, PlrSock, Cmd}, _From, #state{board = BoardData, size = BoardSize, players = Players, que = Que} = State) ->
     Player = maps:get(PlrSock, Players),
     PlrCh = maps:get(ch, Player),
     case (PlrSock =:= first(Que)) orelse (Cmd =:= <<"giveup">>) of
         true ->
             CurrPos = string:str(BoardData, [PlrCh]),
-            case move(BoardData, PlrCh, PlrSock, CurrPos, Cmd) of
+            case move(BoardData, BoardSize, PlrCh, PlrSock, CurrPos, Cmd) of
                 {ok, NewBoardData, NewPos} ->
                     NewQue = swap_que(Que),
                     % Update player moves
@@ -120,10 +115,10 @@ handle_call({cmd, PlrSock, Cmd}, _From, #state{board = BoardData, players = Play
                     NewPlayers = maps:update(PlrSock, NewPlr, Players),
                     % New State
                     NewState = State#state{board = NewBoardData, players = NewPlayers, que = NewQue},
-                    Board = get_board(NewBoardData),
+                    Board = get_board(NewBoardData, BoardSize),
                     % Check for leader or winner
                     NewQuePL = lists:map(fun(Sock) -> {maps:get(ch, maps:get(Sock, Players)), Sock} end, NewQue),
-                    case get_leader(NewBoardData, NewPlayers, NewQuePL) of
+                    case get_leader(NewBoardData, BoardSize, NewPlayers, NewQuePL) of
                         {prewinner, PreWinnerSock} ->
                             PreWinnerName = maps:get(name, maps:get(PreWinnerSock, Players)),
                             PreWinnerCh = maps:get(ch, maps:get(PreWinnerSock, Players)),
@@ -208,77 +203,76 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 %% Internal functions
-move(BoardData, PlrCh, PlrSock, CurrPos, CmdBin) ->
+move(BoardData, BoardSize, PlrCh, PlrSock, CurrPos, CmdBin) ->
     Up = up, Right = right, Down = down, Left = left,
     Cmds = #{<<"up">> => Up, <<"w">> => Up, <<"right">> => Right, <<"d">> => Right, <<"down">> => Down, <<"s">> => Down, <<"left">> => Left, <<"a">> => Left, <<"giveup">> => giveup},
     case maps:find(CmdBin, Cmds) of
         {ok, Cmd} ->
             if Cmd =:= giveup -> {giveup, PlrSock};
-            true -> check_move(Cmd, BoardData, PlrCh, CurrPos)
+            true -> check_move(Cmd, BoardData, BoardSize, PlrCh, CurrPos)
             end;
         error   -> {error, <<"unknown command">>}
     end.
 
 
-check_move(up, BoardData, PlrCh, CurrPos) ->
-    NewPos = CurrPos - ?VSTEP,
+check_move(up, BoardData, [Width, Height], PlrCh, CurrPos) ->
+    VStep = Width,
+    NewPos = CurrPos - VStep,
     if (NewPos < 1) ->
         {error, <<"border">>};
     true ->
         case lists:nth(NewPos, BoardData) of
-            ?EMP -> {ok, get_new_board(up, BoardData, PlrCh, CurrPos), NewPos};
+            ?EMP -> {ok, get_new_board(up, BoardData, [Width, Height], PlrCh, CurrPos), NewPos};
             _ ->    {error, <<"occupied place">>}
         end
     end;
 
-check_move(right, BoardData, PlrCh, CurrPos) ->
-    Width= ?WIDTH,
+check_move(right, BoardData, [Width, Height], PlrCh, CurrPos) ->
     if (CurrPos rem Width =:= 0) ->
         {error,  <<"border">>};
     true ->
         NewPos = CurrPos + ?HSTEP,
         case lists:nth(NewPos, BoardData) of
-            ?EMP -> {ok, get_new_board(right, BoardData, PlrCh, CurrPos), NewPos};
+            ?EMP -> {ok, get_new_board(right, BoardData, [Width, Height], PlrCh, CurrPos), NewPos};
             _    -> {error, <<"occupied place">>}
         end
     end;
 
-check_move(down, BoardData, PlrCh, CurrPos) ->
-    Width= ?WIDTH, Height = ?HEIGHT,
-    NewPos = CurrPos + ?VSTEP,
+check_move(down, BoardData, [Width, Height], PlrCh, CurrPos) ->
+    VStep = Width,
+    NewPos = CurrPos + VStep,
     if (NewPos > Height * Width) ->
         {error,  <<"border">>};
     true ->
         case lists:nth(NewPos, BoardData) of
-            ?EMP -> {ok, get_new_board(down, BoardData, PlrCh, CurrPos), NewPos};
+            ?EMP -> {ok, get_new_board(down, BoardData, [Width, Height], PlrCh, CurrPos), NewPos};
             _ ->    {error, <<"occupied place">>}
         end
     end;
 
-check_move(left, BoardData, PlrCh, CurrPos) ->
-    Width= ?WIDTH,
+check_move(left, BoardData, [Width, Height], PlrCh, CurrPos) ->
     NewPos = CurrPos - ?HSTEP,
     if (CurrPos rem Width =:= 1) ->
         {error,  <<"border">>};
     true ->
         case lists:nth(NewPos, BoardData) of
-            ?EMP -> {ok, get_new_board(left, BoardData, PlrCh, CurrPos), NewPos};
+            ?EMP -> {ok, get_new_board(left, BoardData, [Width, Height], PlrCh, CurrPos), NewPos};
             _ ->    {error, <<"occupied place">>}
         end
     end.
 
 
-get_leader(BoardData, Players, QuePL) ->
+get_leader(BoardData, BoardSize, Players, QuePL) ->
     ChQue  = lists:map(fun({Ch, _Sock}) -> Ch end, QuePL),
-    case get_winner(BoardData, ChQue) of
+    case get_winner(BoardData, BoardSize, ChQue) of
         {winner, PlayerCh} -> {winner, proplists:get_value(PlayerCh, QuePL)};
         error ->
             % check for prewinner
             [Plr1Ch, Plr2Ch] = ChQue,
             Plr1Moves = maps:get(moves, maps:get(proplists:get_value(Plr1Ch, QuePL), Players)),
             Plr2Moves = maps:get(moves, maps:get(proplists:get_value(Plr2Ch, QuePL), Players)),
-            Plr1RestMoves = lists:sort(get_rest_moves(BoardData, Plr1Ch)),
-            Plr2RestMoves = lists:sort(get_rest_moves(BoardData, Plr2Ch)),
+            Plr1RestMoves = lists:sort(get_rest_moves(BoardData, BoardSize, Plr1Ch)),
+            Plr2RestMoves = lists:sort(get_rest_moves(BoardData, BoardSize, Plr2Ch)),
             CommonRestMoves = lists:sort(sets:to_list(sets:intersection(sets:from_list(Plr1RestMoves), sets:from_list(Plr2RestMoves)))),
 
             if (length(Plr1Moves) =:= length(Plr2Moves)) andalso ((CommonRestMoves =:= []) orelse ((Plr1RestMoves =:= CommonRestMoves) orelse (Plr2RestMoves =:= CommonRestMoves))) ->
@@ -290,54 +284,56 @@ get_leader(BoardData, Players, QuePL) ->
             end
     end.
 
-get_winner(_Board, []) -> error;
-get_winner(Board, [Player | Rest]) ->
-    case is_stalemate(Board, Player) of
+get_winner(_Board, _BoardSize, []) -> error;
+get_winner(Board, BoardSize, [Player | Rest]) ->
+    case is_stalemate(Board, BoardSize, Player) of
         true  -> {winner, get_opponent(Player)};
-        false -> get_winner(Board, Rest)
+        false -> get_winner(Board, BoardSize, Rest)
     end.
 
 
-is_stalemate(Board, Player) ->
+is_stalemate(Board, BoardSize, Player) ->
     Pos = string:str(Board, [Player]),
-    is_stalemate(Board, Player, Pos, ?DIRS).
-is_stalemate(_State, _Player, _Pos, []) -> true;
-is_stalemate(State, Player, Pos, [Dir | Rest]) ->
-    case check_move(Dir, State, Player, Pos) of
+    is_stalemate(Board, BoardSize, Player, Pos, ?DIRS).
+is_stalemate(_State, _BoardSize, _Player, _Pos, []) -> true;
+is_stalemate(State, BoardSize, Player, Pos, [Dir | Rest]) ->
+    case check_move(Dir, State, BoardSize, Player, Pos) of
         {ok, _State, _NewPos} -> false;
-        {error, _Reason} -> is_stalemate(State, Player, Pos, Rest)
+        {error, _Reason} -> is_stalemate(State, BoardSize, Player, Pos, Rest)
     end.
 
 
-get_rest_moves(Board, Player) ->
+get_rest_moves(Board, BoardSize, Player) ->
     Pos = string:str(Board, [Player]),
-    get_rest_moves(Board, Player, Pos, ?DIRS, [], []).
+    get_rest_moves(Board, BoardSize, Player, Pos, ?DIRS, [], []).
 
-get_rest_moves(_Board, _Player, _Pos, [], [], Acc) -> Acc;
-get_rest_moves(Board, Player, _Pos, [], [{PosRe, RestDirs} | RestPos], Acc) ->
-    get_rest_moves(Board, Player, PosRe, RestDirs, RestPos, Acc);
-get_rest_moves(Board, Player, Pos, [Dir | RestDirs], AccPos, Acc) ->
-    case check_move(Dir, Board, Player, Pos) of
+get_rest_moves(_Board, _BoardSize, _Player, _Pos, [], [], Acc) -> Acc;
+get_rest_moves(Board, BoardSize, Player, _Pos, [], [{PosRe, RestDirs} | RestPos], Acc) ->
+    get_rest_moves(Board, BoardSize, Player, PosRe, RestDirs, RestPos, Acc);
+get_rest_moves(Board, BoardSize, Player, Pos, [Dir | RestDirs], AccPos, Acc) ->
+    case check_move(Dir, Board, BoardSize, Player, Pos) of
         {ok, _Board, NewPos} ->
             case lists:member(NewPos, Acc) of
-                true -> get_rest_moves(Board, Player, Pos, RestDirs, AccPos, Acc);
-                false -> get_rest_moves(Board, Player, NewPos, ?DIRS, [{Pos, RestDirs} | AccPos], [NewPos | Acc])
+                true -> get_rest_moves(Board, BoardSize, Player, Pos, RestDirs, AccPos, Acc);
+                false -> get_rest_moves(Board, BoardSize, Player, NewPos, ?DIRS, [{Pos, RestDirs} | AccPos], [NewPos | Acc])
             end;
         {error, _Reason} ->
-            get_rest_moves(Board, Player, Pos, RestDirs, AccPos, Acc)
+            get_rest_moves(Board, BoardSize, Player, Pos, RestDirs, AccPos, Acc)
     end.
 
 
-get_new_board(up, Board, Player, Pos) ->
-    lists:sublist(Board, Pos-?VSTEP-1) ++ [Player] ++ lists:sublist(Board, Pos-?VSTEP+1, ?WIDTH-1) ++ [?OCC] ++ lists:nthtail(Pos, Board);
+get_new_board(up, Board, [Width, _Height], Player, Pos) ->
+    VStep = Width,
+    lists:sublist(Board, Pos-VStep-1) ++ [Player] ++ lists:sublist(Board, Pos-VStep+1, Width-1) ++ [?OCC] ++ lists:nthtail(Pos, Board);
 
-get_new_board(right, Board, Player, Pos) ->
+get_new_board(right, Board, [_Width, _Height], Player, Pos) ->
     lists:sublist(Board, Pos-1) ++ [?OCC] ++ [Player] ++ lists:nthtail(Pos+1, Board);
 
-get_new_board(down, Board, Player, Pos) ->
-    lists:sublist(Board, Pos-1) ++ [?OCC] ++ lists:sublist(Board, Pos+1, ?WIDTH-1) ++ [Player] ++ lists:nthtail(Pos+?VSTEP, Board);
+get_new_board(down, Board, [Width, _Height], Player, Pos) ->
+    VStep = Width,
+    lists:sublist(Board, Pos-1) ++ [?OCC] ++ lists:sublist(Board, Pos+1, Width-1) ++ [Player] ++ lists:nthtail(Pos+VStep, Board);
 
-get_new_board(left, Board, Player, Pos) ->
+get_new_board(left, Board, [_Width, _Height], Player, Pos) ->
     lists:sublist(Board, Pos-2) ++ [Player] ++ [?OCC] ++ lists:nthtail(Pos, Board).
 
 
@@ -345,7 +341,7 @@ get_new_board(left, Board, Player, Pos) ->
 new_board(Width, Height) ->
     [?PL1] ++ [?EMP || _ <- lists:seq(1, Width * Height - 2)] ++ [?PL2].
 
-get_board(State) ->
+get_board(BoardData, [Width, Height]) ->
     CR = <<"+">>,
     HL = <<"---">>,
     VL = <<"|">>,
@@ -356,7 +352,7 @@ get_board(State) ->
             <<LINE/binary, LinePart/binary>>
         end,
         CR,
-        [<<HL/binary, CR/binary>> || _ <- lists:seq(1, ?WIDTH)]
+        [<<HL/binary, CR/binary>> || _ <- lists:seq(1, Width)]
     ),
     lists:foldl(
         fun(L, BOARD) ->
@@ -369,7 +365,7 @@ get_board(State) ->
         end,
         <<HLINE/binary, ?ENDSTR/binary>>,
         % split state list into HEIGHT lists
-        [lists:sublist(State, N * ?WIDTH + 1, ?WIDTH) || N <- lists:seq(0, ?HEIGHT - 1)]
+        [lists:sublist(BoardData, N * Width + 1, Width) || N <- lists:seq(0, Height - 1)]
     ).
 %% -- Board -- %%
 
@@ -399,14 +395,6 @@ whose_move(PlrSock, PlrCh, PlrName, Que) ->
         true  -> get_your_move_msg(PlrCh, PlrName);
         false -> ?WAITMOVE
     end.
-
-get_battle_field_width() ->
-    {ok, Width} = application:get_env(strategy, battle_field_width),
-    Width.
-
-get_battle_field_height() ->
-    {ok, Height} = application:get_env(strategy, battle_field_width),
-    Height.
 
 get_battle_controls() ->
     Up = <<226,134,145>>, Right = <<226,134,146>>, Down = <<226,134,147>>, Left = <<226,134,144>>,

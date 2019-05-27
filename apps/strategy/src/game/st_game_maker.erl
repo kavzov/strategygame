@@ -71,7 +71,7 @@ init([]) ->
     {ok, State}.
 
 handle_call({add_new_game, Width, Height, Id, Name, Rating, PlayerSock, PlayerSrv, GameSrv}, _From, State) ->
-    Player = #{name => Name, rating => Rating, srv => PlayerSrv, socket => PlayerSock, coef => 1.0},
+    Player = #{name => Name, rating => Rating, srv => PlayerSrv, socket => PlayerSock, coef => set_bet_coef(Rating)},
     Game = #{status => wait, players => #{Id => Player}, srv => GameSrv, size => [Width, Height]},
     gen_tcp:send(PlayerSock, <<"Wait for an opponent...\r\n">>),
     {reply, ok, maps:put(get_id(), Game, State)};
@@ -82,9 +82,9 @@ handle_call({play_game, GameId, PlayerId, PlayerName, Rating, PlayerSock, Player
             GamePlayers = maps:get(players, Game),
             [Player_1] = maps:values(GamePlayers),
             Pl_1_Sock = maps:get(socket, Player_1), Pl_2_Sock = PlayerSock,
-            Player = #{name => PlayerName, rating => Rating, srv => PlayerSrv, socket => PlayerSock, coef => 1.0},
+            Player = #{name => PlayerName, rating => Rating, srv => PlayerSrv, socket => PlayerSock, coef => set_bet_coef(Rating)},
             NewGamePlayers = maps:put(PlayerId, Player, GamePlayers),
-            {ok, GameSrv} = supervisor:start_child(st_game_sup, [Pl_1_Sock, Pl_2_Sock]),
+            {ok, GameSrv} = supervisor:start_child(st_game_sup, [Pl_1_Sock, Pl_2_Sock, maps:get(size, Game)]),
             erlang:monitor(process, GameSrv),
             Game1 = maps:update(status, battle, Game),
             Game2 = maps:update(players, NewGamePlayers, Game1),
@@ -173,3 +173,6 @@ code_change(_OldVersion, State, _Extra) ->
 % Utlis
 get_id() ->
     integer_to_binary(rand:uniform(100)).
+
+set_bet_coef(Rating) ->
+    list_to_float(float_to_list(1.9 - Rating/100, [{decimals, 2}])).
