@@ -81,8 +81,8 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 				{<<"game ", WidthHeight/binary>>, ?SERVER_MODE} ->
 					case handle_game(PlayerSrv, WidthHeight) of
 						ok -> PlayerSrv ! 'SET_BATTLE_MODE';
-						{error, badarg} -> Transport:send(Socket, <<"Wrong battle field dimension paramenters.\r\n">>);
-						{error, badmatch} -> Transport:send(Socket, <<"Wrong count of battle field dimension paramenters.\r\n">>);
+						{error, badarg} -> Transport:send(Socket, <<"Wrong battle field dimension parameters.\r\n">>);
+						{error, badmatch} -> Transport:send(Socket, <<"Wrong count of battle field dimension parameters.\r\n">>);
 						{error, badsize} -> Transport:send(Socket, <<"Side size is out of range.\r\n">>)
 					end,
 					loop(State);
@@ -142,13 +142,20 @@ handle_auth(PlayerSrv, Token0) ->
     case epgsql:connect("localhost", "strategy", "strategy", #{database => "strategy", port => 15432, timeout => 5000}) of
         {ok, C} ->
             case epgsql:equery(C, "SELECT id, nickname, winrate FROM players WHERE token=$1;", [Token]) of
+				% WITH summary AS (SELECT *, row_number() OVER (ORDER BY winrate DESC, nickname) AS position FROM players) SELECT position, winrate, nickname, id FROM summary WHERE token=TOKEN;
                 {ok, _, []} ->
 					ok = epgsql:close(C),
 					{ok, <<"Authentication failed\r\n">>};
                 {ok, _, [{Id, Name, Rating}]} ->
 					ok = epgsql:close(C),
-					st_player_srv:auth(PlayerSrv, Id, Name, Rating),
-					{ok, get_server_msg(Name, integer_to_binary(Rating))};
+					% prevent relogin
+					case st_player_storage:get_player_by_id(Id) of
+						{ok, _Player} ->
+							{error, <<"You are already logined\r\n">>};
+						error ->
+							st_player_srv:auth(PlayerSrv, Id, Name, Rating),
+							{ok, get_server_msg(Name, integer_to_binary(Rating))}
+					end;
                 {error, _Reason} ->
 					ok = epgsql:close(C),
 					{error, <<"Authentication error\r\n">>}
@@ -162,7 +169,7 @@ handle_game(PlayerSrv, WidthHeight) ->
 			fun(BinVal) -> side_size(binary_to_integer(BinVal)) end,
 			binary:split(WidthHeight, [<<"\r">>, <<"\n">>, <<" ">>], [global, trim_all])
 			),
-		st_game_maker:add_new_game(PlayerSrv,[Width, Height])
+		st_game_maker:add_new_game(PlayerSrv, [Width, Height])
 	catch
 		throw:badsize -> {error, badsize};
 		error:badarg -> {error, badarg};
@@ -175,11 +182,10 @@ handle_play(GameId, PlayerSrv) ->
 handle_bet(Bet) ->
 	Games = st_game_maker:get_games(battle),
 	try
-		[GameId, PlayerId, Amount, Currency] = binary:split(Bet, [<<" ">>], [global, trim_all]),
+		[GameId, PlayerId, Amount] = binary:split(Bet, [<<" ">>, <<"\r">>, <<"\n">>], [global, trim_all]),
 		check_game_id(GameId, Games),
 		check_player_id(PlayerId, Games),
-		check_amount(Amount),
-		check_currency(Currency)
+		check_amount(Amount)
 		% st_bet_storage:add_bet()
 	catch
 		error:{badmatch, _} -> {error, badmatch};
@@ -251,7 +257,9 @@ iodata_init_handle(Data) ->
     re:replace(Data1, <<"\r\n$">>, <<>>, [{return, binary}]).
 
 side_size(Size) ->
-	if (Size < ?MIN_FIELD_WIDTH) orelse (Size > ?MAX_FIELD_WIDTH) -> throw(badsize);
+	{ok, MinFieldWidth} = application:get_env(strategy, min_battle_field_length),
+	{ok, MaxFieldWidth} = application:get_env(strategy, max_battle_field_length),
+	if (Size < MinFieldWidth) orelse (Size > MaxFieldWidth) -> throw(badsize);
 	true -> Size
 	end.
 
@@ -272,9 +280,8 @@ check_player_id(PlayerId, Games) ->
 	end.
 
 check_amount(Amount) ->
-	ok.
-
-check_currency(Curreency) ->
+	% check for pos integer
+	% check enought money in a user wallet
 	ok.
 
 get_init_msg() ->
