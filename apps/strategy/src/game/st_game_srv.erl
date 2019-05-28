@@ -158,7 +158,7 @@ handle_call({cmd, PlrSock, Cmd}, _From, #state{board = BoardData, size = BoardSi
                     WinnerName = maps:get(name, maps:get(WinnerSock, Players)),
                     GaveupName = maps:get(name, maps:get(GaveupSock, Players)),
                     ServerMsg = server_msg(),
-                    Reply = #{GaveupSock => <<"You lost, ", GaveupName/binary, ".", ?ENDSTR/binary, ServerMsg/binary>>, WinnerSock => <<"Your opponent ", GaveupName/binary, " has gave up.", ?ENDSTR/binary, "You won the game, ", WinnerName/binary, "!", ?ENDSTR/binary, ServerMsg/binary>>},
+                    Reply = #{GaveupSock => <<"You lost, ", GaveupName/binary, ".", ?ENDSTR/binary, ServerMsg/binary>>, WinnerSock => <<?ENDSTR/binary, "Your opponent ", GaveupName/binary, " has gave up.", ?ENDSTR/binary, "You won the game, ", WinnerName/binary, "!", ?ENDSTR/binary, ServerMsg/binary>>},
                     send_reply_to_players(Reply),
                     stop_game(WinnerSock, GaveupSock, Players),
                     lager:info("~p gave up. ~p won the game.", [GaveupName, WinnerName]),
@@ -409,17 +409,17 @@ get_battle_controls() ->
 
 
 db_end_game(WinnerId, LoserId) ->
-    case epgsql:connect("localhost", "strategy", "strategy", #{database => "strategy", port => 15432, timeout => 5000}) of
+    case epgsql:connect("localhost", "strategy", "strategy", #{database => "strategy", port => 15432, timeout => 10000}) of
         {ok, C} ->
             {ok, _} = epgsql:equery(C, "
                                 UPDATE players SET
-                                played_battles = played_battles + 1,
-                                winrate = round(100 * battles_won::numeric / played_battles::numeric) 
+                                battles = battles + 1,
+                                rating = round(100 * won::numeric / battles::numeric) 
                                 WHERE id IN ($1, $2);
                                 ", [WinnerId, LoserId]),
             {ok, _} = epgsql:equery(C, "
                                 UPDATE players SET
-                                battles_won = battles_won + 1
+                                won = won + 1
                                 WHERE id = $1;
                                 ", [WinnerId]),
 			ok = epgsql:close(C);

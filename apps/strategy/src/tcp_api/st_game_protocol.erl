@@ -141,12 +141,12 @@ handle_auth(PlayerSrv, Token0) ->
 	% TODO make function for the dbquery
     case epgsql:connect("localhost", "strategy", "strategy", #{database => "strategy", port => 15432, timeout => 5000}) of
         {ok, C} ->
-            case epgsql:equery(C, "SELECT id, nickname, winrate FROM players WHERE token=$1;", [Token]) of
-				% WITH summary AS (SELECT *, row_number() OVER (ORDER BY winrate DESC, nickname) AS position FROM players) SELECT position, winrate, nickname, id FROM summary WHERE token=TOKEN;
+            case epgsql:equery(C, "WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT id, name, wallet, battles, won, rating, position FROM summary WHERE token=$1;", [Token]) of
+				% WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT id, name, wallet, battles, won, rating, position FROM summary WHERE token=TOKEN;
                 {ok, _, []} ->
 					ok = epgsql:close(C),
 					{ok, <<"Authentication failed\r\n">>};
-                {ok, _, [{Id, Name, Rating}]} ->
+                {ok, _, [{Id, Name, Wallet, Battles, Won, Rating, Position}]} ->
 					ok = epgsql:close(C),
 					% prevent relogin
 					case st_player_storage:get_player_by_id(Id) of
