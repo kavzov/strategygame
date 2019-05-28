@@ -40,12 +40,14 @@ init(Ref, Transport, _Opts = []) ->
 	Transport:send(Socket, get_init_msg()),
 	loop(State).
 
+-include("../player/st_player.hrl").
+
 loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = State) ->
 	{ok, ClientDisconnectTimeoutMin} = application:get_env(strategy, client_disconnect_timeout),
 	ClientDisconnectTimeoutMillisec = ClientDisconnectTimeoutMin * 60 * 1000,
 	case Transport:recv(Socket, 0, ClientDisconnectTimeoutMillisec) of
 		{ok, IOData} ->
-			{state, Socket, _Player, Mode, GameSrv} = st_player_srv:get_player_info(PlayerSrv),
+			{state, Socket, #player{id = PlayerId}, Mode, GameSrv} = st_player_srv:get_player_info(PlayerSrv),
 			CmdBin = iodata_init_handle(IOData),
 			case {CmdBin, Mode} of
 				{<<"auth ", Token/binary>>, ?INIT_MODE} ->
@@ -103,14 +105,14 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 					ok = Transport:close(Socket);
 				{<<"bet ", Bet/binary>>, ?SERVER_MODE} ->
 					% bet GameId PlayerId Amount Curreency
-					Reply = handle_bet(Bet),
+					Reply = handle_bet(Bet, PlayerId),
 					Transport:send(Socket, Reply),
 					% PlayerSrv ! 'SET_BET_MODE',
 					loop(State);
 				{<<"me">>, ?SERVER_MODE} ->
 					ok;
 				{<<"table">>, ?SERVER_MODE} ->
-					ok.
+					ok;
 				
 				{_Unknown, ?SERVER_MODE} ->
 					Reply = <<"Unknown command\r\n">>,
@@ -180,18 +182,21 @@ handle_game(PlayerSrv, WidthHeight) ->
 handle_play(GameId, PlayerSrv) ->
 	st_game_maker:play_game(GameId, PlayerSrv).
 
-handle_bet(Bet) ->
+handle_bet(BetStr, BeterId) ->
 	Games = st_game_maker:get_games(battle),
 	try
-		[GameId, PlayerId, Amount] = binary:split(Bet, [<<" ">>, <<"\r">>, <<"\n">>], [global, trim_all]),
+		[GameId, PlayerId, BinBet] = binary:split(BetStr, [<<" ">>, <<"\r">>, <<"\n">>], [global, trim_all]),
 		check_game_id(GameId, Games),
 		check_player_id(PlayerId, Games),
-		check_amount(Amount)
-		% st_bet_storage:add_bet()
+		Bet = check_bet(BeterId, BinBet)
+		% st_bet_storage:add_bet(BeterId, Bet, GameId, PlayerId)
 	catch
-		error:{badmatch, _} -> {error, badmatch};
-		throw:badgameid 	-> {error, badgameid};
-		throw:badplayerid 	-> {error, badplayerid}
+		error:{badmatch, _} -> lager:error("Bad arguments"), {error, badmatch};
+		throw:badgameid 	-> lager:error("Bad game ID"), {error, badgameid};
+		throw:badplayerid 	-> lager:error("Bad player ID"), {error, badplayerid};
+		throw:badbinnum		-> lager:error("Bet not a number"), {error, badbinnum};
+		throw:negativebet	-> lager:error("Not positive Bet"), {error, negativebet};
+		throw:bigbet		-> lager:error("Big Bet"), {error, bigbet}
 	end,
 	<<"ok\r\n">>.
 
@@ -280,10 +285,39 @@ check_player_id(PlayerId, Games) ->
 		false -> throw(badplayerid)
 	end.
 
-check_amount(Amount) ->
-	% check for pos integer
-	% check enought money in a user wallet
-	ok.
+check_bet(PlayerId, BinBet) ->
+	Bet = bin_to_num(BinBet),
+	if Bet =< 0 -> throw(negativebet);
+	true ->
+		case epgsql:connect("localhost", "strategy", "strategy", #{database => "strategy", port => 15432, timeout => 5000}) of
+			{ok, C} ->
+				case epgsql:equery(C, "SELECT wallet FROM players WHERE id=$1;", [PlayerId]) of
+					{ok, _, []} ->
+						ok = epgsql:close(C),
+						{ok, <<"No wallet)\r\n">>};
+					{ok, _, [{BinWallet}]} ->
+						ok = epgsql:close(C),
+						Wallet = bin_to_num(BinWallet),
+						if Wallet < Bet -> throw(bigbet);
+						true -> Bet
+						end;
+					{error, _Reason} ->
+						ok = epgsql:close(C),
+						{error, <<"Error\r\n">>}
+				end;
+			{error, Reason} -> lager:error("No connection to database during getting of player wallet amount:~n~p", [Reason])
+		end
+	end.
+
+bin_to_num(BinNum) ->
+	case re:run(BinNum, <<"^\\d+\\.\\d+$">>) of
+		{match, _} -> binary_to_float(BinNum);
+		nomatch	   ->
+			case re:run(BinNum, <<"^\\d+$">>) of
+				{match, _} -> binary_to_integer(BinNum) + 0.0;
+				nomatch	   -> throw(badbinnum)
+			end
+	end.
 
 get_init_msg() ->
 	<<"
