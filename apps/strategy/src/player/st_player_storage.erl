@@ -3,7 +3,7 @@
 
 -export([start_link/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3, add_player/3, update_player/3, del_player/1,
-        all_players/0, get_player/1, get_player_by_srv/1
+        all_players/0, get_player/1, get_player_by_id/1, get_player_by_srv/1
 ]).
 
 -include_lib("stdlib/include/ms_transform.hrl").
@@ -36,6 +36,9 @@ all_players() ->
 
 get_player(Socket) ->
     gen_server:call(?MODULE, {get_player, Socket}).
+
+get_player_by_id(Id) ->
+    gen_server:call(?MODULE, {get_player_by_id, Id}).
 
 get_player_by_srv(PlayerSrv) ->
     gen_server:call(?MODULE, {get_player, {PlayerSrv}}).
@@ -74,9 +77,19 @@ handle_call({get_player, Socket}, _From, State) ->
     [Reply] = ets:lookup(?MODULE, Socket),
     {reply, Reply, State};
 
+handle_call({get_player_by_id, Id}, _From, State) ->
+    Player = ets:match_object(?MODULE, {Id, '$1', '$2', '$3', '$4'}),
+    case Player of
+        [] -> {reply, error, State};
+        _  -> {reply, {ok, lists:nth(1, Player)}, State}
+    end;
+
 handle_call({get_player_by_srv, PlayerSrv}, _From, State) ->
-    [Player] = ets:match_object(?MODULE, {'$1', '$2', '$3', PlayerSrv, '$5'}),
-    {reply, Player, State};
+    Player = ets:match_object(?MODULE, {'$1', '$2', '$3', PlayerSrv, '$5'}),
+    case Player of
+        [] -> {reply, error, State};
+        _  -> {reply, {ok, lists:nth(1, Player)}, State}
+    end;
 %%Temp
 
 
