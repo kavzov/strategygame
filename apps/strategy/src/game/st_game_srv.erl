@@ -8,7 +8,7 @@
 
 -define(SEP, <<" ">>).
 -define(ENDSTR, <<"\r\n">>).
--define(INIT_POS, [1, ?WIDTH * ?HEIGHT]).
+% -define(INIT_POS, [1, ?WIDTH * ?HEIGHT]).
 -define(HSTEP, 1).
 -define(VSTEP, ?WIDTH).
 -define(PL1, <<"A">>).
