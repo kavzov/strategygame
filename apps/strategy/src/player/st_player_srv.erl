@@ -40,9 +40,9 @@ init(Socket) ->
     {ok, State}.
 
 handle_call({auth, Id, Name, Rating, PlayerSrv}, _From, State = #state{socket = PlayerSock, player=Player}) ->
-    Player2 = Player#player{id = Id, name = Name, rating = Rating},
-    st_player_storage:update_player(Player2, PlayerSrv, PlayerSock),
-    State2 = State#state{player = Player2, mode = server},
+    AuthPlayer = Player#player{id = Id, name = Name, rating = Rating},
+    st_player_storage:update_player(AuthPlayer, PlayerSrv, PlayerSock),
+    State2 = State#state{player = AuthPlayer, mode = server},
     {reply, ok, State2};
 
 handle_call(get_player_info, _From, State) ->
