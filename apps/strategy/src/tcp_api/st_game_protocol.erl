@@ -10,9 +10,6 @@
 -define(BATTLE_MODE, battle).
 -define(BET_MODE, bet).
 
--define(MIN_FIELD_WIDTH, 3).
--define(MAX_FIELD_WIDTH, 10).
-
 -include("../game/st_game.hrl").
 
 -record(state, {
@@ -110,6 +107,11 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 					Transport:send(Socket, Reply),
 					% PlayerSrv ! 'SET_BET_MODE',
 					loop(State);
+				{<<"me">>, ?SERVER_MODE} ->
+					ok;
+				{<<"table">>, ?SERVER_MODE} ->
+					ok.
+				
 				{_Unknown, ?SERVER_MODE} ->
 					Reply = <<"Unknown command\r\n">>,
 					Transport:send(Socket, Reply),
@@ -141,8 +143,7 @@ handle_auth(PlayerSrv, Token0) ->
 	% TODO make function for the dbquery
     case epgsql:connect("localhost", "strategy", "strategy", #{database => "strategy", port => 15432, timeout => 5000}) of
         {ok, C} ->
-            case epgsql:equery(C, "WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT id, name, wallet, battles, won, rating, position FROM summary WHERE token=$1;", [Token]) of
-				% WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT id, name, wallet, battles, won, rating, position FROM summary WHERE token=TOKEN;
+            case epgsql:equery(C, "WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT id, name, wallet::NUMERIC, battles, won, rating, position FROM summary WHERE token=$1;", [Token]) of
                 {ok, _, []} ->
 					ok = epgsql:close(C),
 					{ok, <<"Authentication failed\r\n">>};
@@ -153,8 +154,8 @@ handle_auth(PlayerSrv, Token0) ->
 						{ok, _Player} ->
 							{error, <<"You are already logined\r\n">>};
 						error ->
-							st_player_srv:auth(PlayerSrv, Id, Name, Rating),
-							{ok, get_server_msg(Name, integer_to_binary(Rating))}
+							st_player_srv:auth(PlayerSrv, Id, Name, binary_to_float(Wallet), Battles, Won, Rating, Position),
+							{ok, get_server_msg(integer_to_binary(Id), Name, Wallet, integer_to_binary(Battles), integer_to_binary(Won), integer_to_binary(Rating), integer_to_binary(Position))}
 					end;
                 {error, _Reason} ->
 					ok = epgsql:close(C),
@@ -296,8 +297,9 @@ Hi! It's Polyana game.\r\nAuthenticate and play or go out)
 +---------------------------+
 \r\n">>.
 
-get_server_msg(Name, Rating) ->
+get_server_msg(_Id, Name, _Wallet, Battles, Won, Rating, Position) ->
+	HLine = <<"\r\n-----------------------------------------------------\r\n">>,
 	ServerMsg = server_msg(),
 	WaitPlayers = handle_list(wait),
 	BetBattles = handle_list(battle),
-	<<"\r\nWelcome, ", Name/binary, "!\r\nYour rating - ", Rating/binary, ".\r\n", WaitPlayers/binary, BetBattles/binary, ServerMsg/binary>>.
+	<<HLine/binary, "Welcome, ", Name/binary, "!\r\nYou participated in ", Battles/binary, " battles. Won in ", Won/binary, ".\r\nYour rating - ", Rating/binary, ". Position in the championship - ", Position/binary, ".", HLine/binary, WaitPlayers/binary, BetBattles/binary, ServerMsg/binary>>.

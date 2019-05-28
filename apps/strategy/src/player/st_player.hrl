@@ -1,6 +1,9 @@
 -record(player, {
     id :: pos_integer(),
     name :: binary(),
-    % password :: binary(),
-    rating :: pos_integer()
+    wallet :: binary(),
+    battles :: pos_integer(),
+    won :: integer(),
+    rating :: pos_integer(),
+    position :: pos_integer()
 }).

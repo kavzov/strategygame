@@ -51,13 +51,13 @@ connect(PlayerSock, _PlayerSrv) ->
 
 % New BET version
 add_new_game(PlayerSrv, [Width, Height]) ->
-    {state, PlayerSock, {player, Id, Name, Rating}, _Mode, GameSrv} = st_player_srv:get_player_info(PlayerSrv),
-    gen_server:call(?MODULE, {add_new_game, Width, Height, Id, Name, Rating, PlayerSock, PlayerSrv, GameSrv}).
+    {state, PlayerSock, {player, Id, Name, Wallet, Battles, Won, Rating, Position}, _Mode, GameSrv} = st_player_srv:get_player_info(PlayerSrv),
+    gen_server:call(?MODULE, {add_new_game, Width, Height, Id, Name, Wallet, Battles, Won, Rating, Position, PlayerSock, PlayerSrv, GameSrv}).
 
 play_game(GameId, PlayerSrv) ->
-    {state, PlayerSock, {player, Id, Name, Rating}, _Mode, GameSrv} = st_player_srv:get_player_info(PlayerSrv),
+    {state, PlayerSock, {player, Id, Name, Wallet, Battles, Won, Rating, Position}, _Mode, GameSrv} = st_player_srv:get_player_info(PlayerSrv),
     % GET OPNT SOCKET
-    gen_server:call(?MODULE, {play_game, GameId, Id, Name, Rating, PlayerSock, PlayerSrv, GameSrv}).
+    gen_server:call(?MODULE, {play_game, GameId, Id, Name, Wallet, Battles, Won, Rating, Position, PlayerSock, PlayerSrv, GameSrv}).
 
 get_games(Status) ->
     gen_server:call(?MODULE, {get_games, Status}).
@@ -70,19 +70,19 @@ init([]) ->
     State = #{},
     {ok, State}.
 
-handle_call({add_new_game, Width, Height, Id, Name, Rating, PlayerSock, PlayerSrv, GameSrv}, _From, State) ->
-    Player = #{name => Name, rating => Rating, srv => PlayerSrv, socket => PlayerSock, coef => set_bet_coef(Rating)},
+handle_call({add_new_game, Width, Height, Id, Name, Wallet, Battles, Won, Rating, Position, PlayerSock, PlayerSrv, GameSrv}, _From, State) ->
+    Player = #{name => Name, wallet => Wallet, battles => Battles, won => Won, rating => Rating, position => Position, srv => PlayerSrv, socket => PlayerSock, coef => set_bet_coef(Rating)},
     Game = #{status => wait, players => #{Id => Player}, srv => GameSrv, size => [Width, Height]},
     gen_tcp:send(PlayerSock, <<"Wait for an opponent...\r\n">>),
     {reply, ok, maps:put(get_id(), Game, State)};
 
-handle_call({play_game, GameId, PlayerId, PlayerName, Rating, PlayerSock, PlayerSrv, _GameSrv}, _From, State) ->
+handle_call({play_game, GameId, PlayerId, PlayerName, Wallet, Battles, Won, Rating, Position, PlayerSock, PlayerSrv, _GameSrv}, _From, State) ->
     case maps:find(GameId, State) of
         {ok, Game} ->
             GamePlayers = maps:get(players, Game),
             [Player_1] = maps:values(GamePlayers),
             Pl_1_Sock = maps:get(socket, Player_1), Pl_2_Sock = PlayerSock,
-            Player = #{name => PlayerName, rating => Rating, srv => PlayerSrv, socket => PlayerSock, coef => set_bet_coef(Rating)},
+            Player = #{name => PlayerName, wallet => Wallet, battles => Battles, won => Won, rating => Rating, position => Position, srv => PlayerSrv, socket => PlayerSock, coef => set_bet_coef(Rating)},
             NewGamePlayers = maps:put(PlayerId, Player, GamePlayers),
             {ok, GameSrv} = supervisor:start_child(st_game_sup, [Pl_1_Sock, Pl_2_Sock, maps:get(size, Game)]),
             erlang:monitor(process, GameSrv),

@@ -73,8 +73,8 @@ stop_game(WinnerSock, LoserSock, Players) ->
 
 %% gen_server API
 init([P1_Sock, P2_Sock, [Width, Height]]) ->
-    {P1_ID, P1_Name, _P1_Rating, P1_Srv, _} = st_player_storage:get_player(P1_Sock),
-    {P2_ID, P2_Name, _P2_Rating, P2_Srv, _} = st_player_storage:get_player(P2_Sock),
+    {P1_ID, P1_Name, _P1_Wallet, _P1_Battles, _P1_Won, _P1_Rating, _P1_Position, P1_Srv, _} = st_player_storage:get_player(P1_Sock),
+    {P2_ID, P2_Name, _P2_Wallet, _P2_Battles, _P2_Won, _P2_Rating, _P2_Position, P2_Srv, _} = st_player_storage:get_player(P2_Sock),
     Player_1 = #{id => P1_ID, name => P1_Name, srv => P1_Srv, ch => ?PL1, moves => []},
     Player_2 = #{id => P2_ID, name => P2_Name, srv => P2_Srv, ch => ?PL2, moves => []},
 

@@ -51,16 +51,16 @@ get_player_by_srv(PlayerSrv) ->
 
 init(no_args) ->
     lager:info("~p init", [?MODULE]),
-    ets:new(?MODULE, [named_table, {keypos, 5}]),
+    ets:new(?MODULE, [named_table, {keypos, 9}]),
     {ok, #state{}}.
 
-handle_call({add_player, {player, Id, Name, Rating}, PlayerSrv, PlayerSock}, _From, State) ->
-    ets:insert(?MODULE, {Id, Name, Rating, PlayerSrv, PlayerSock}),
+handle_call({add_player, {player, Id, Name, Wallet, Battles, Won, Rating, Position}, PlayerSrv, PlayerSock}, _From, State) ->
+    ets:insert(?MODULE, {Id, Name, Wallet, Battles, Won, Rating, Position, PlayerSrv, PlayerSock}),
     lager:info("Handle call for add a player to ets. PlayerSrv: ~p, Socket: ~p", [PlayerSrv, PlayerSock]),
     {reply, ok, State};
 
-handle_call({update_player, {player, Id, Name, Rating}, PlayerSrv, PlayerSock}, _From, State) ->
-    ets:insert(?MODULE, {Id, Name, Rating, PlayerSrv, PlayerSock}),
+handle_call({update_player, {player, Id, Name, Wallet, Battles, Won, Rating, Position}, PlayerSrv, PlayerSock}, _From, State) ->
+    ets:insert(?MODULE, {Id, Name, Wallet, Battles, Won, Rating, Position, PlayerSrv, PlayerSock}),
     lager:info("Handle call for UPDATE the player ~p in ets. PlayerSrv: ~p, Socket: ~p", [Name, PlayerSrv, PlayerSock]),
     {reply, ok, State};
 
@@ -70,7 +70,7 @@ handle_call({del_player, Socket}, _From, State) ->
 
 %% Temp
 handle_call({all_players}, _From, State) ->
-    Reply = ets:match_object(?MODULE, {'$1', '$2', '$3', '$4', '$5'}),
+    Reply = ets:match_object(?MODULE, {'$1', '$2', '$3', '$4', '$5', '$6', '$7', '$8', '$9'}),
     {reply, Reply, State};
 
 handle_call({get_player, Socket}, _From, State) ->
@@ -78,14 +78,14 @@ handle_call({get_player, Socket}, _From, State) ->
     {reply, Reply, State};
 
 handle_call({get_player_by_id, Id}, _From, State) ->
-    Player = ets:match_object(?MODULE, {Id, '$1', '$2', '$3', '$4'}),
+    Player = ets:match_object(?MODULE, {Id, '$1', '$2', '$3', '$4', '$5', '$6', '$7', '$8'}),
     case Player of
         [] -> {reply, error, State};
         _  -> {reply, {ok, lists:nth(1, Player)}, State}
     end;
 
 handle_call({get_player_by_srv, PlayerSrv}, _From, State) ->
-    Player = ets:match_object(?MODULE, {'$1', '$2', '$3', PlayerSrv, '$5'}),
+    Player = ets:match_object(?MODULE, {'$1', '$2', '$3', '$4', '$5', '$6', '$7', PlayerSrv, '$8'}),
     case Player of
         [] -> {reply, error, State};
         _  -> {reply, {ok, lists:nth(1, Player)}, State}

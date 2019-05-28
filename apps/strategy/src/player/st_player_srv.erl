@@ -1,7 +1,7 @@
 -module(st_player_srv).
 -behavior(gen_server).
 
--export([start_link/1, auth/4, get_player_info/1, stop/1]).
+-export([start_link/1, auth/8, get_player_info/1, stop/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("st_player.hrl").
@@ -16,8 +16,8 @@
 start_link(Socket) ->
     gen_server:start_link(?MODULE, Socket, []).
 
-auth(PlayerSrv, Id, Name, Rating) ->
-    gen_server:call(PlayerSrv, {auth, Id, Name, Rating, PlayerSrv}).
+auth(PlayerSrv, Id, Name, Wallet, Battles, Won, Rating, Position) ->
+    gen_server:call(PlayerSrv, {auth, Id, Name, Wallet, Battles, Won, Rating, Position, PlayerSrv}).
 
 get_player_info(PlayerSrv) ->
     gen_server:call(PlayerSrv, get_player_info).
@@ -28,7 +28,7 @@ stop(PlayerSrv) ->
 %%% gen_server API
 
 init(Socket) ->
-    Player = #player{id = <<>>, name = <<>>, rating = <<>>},
+    Player = #player{id = <<>>, name = <<>>, wallet = <<>>, battles = <<>>, won = <<>>, rating = <<>>, position = <<>>},
     State = #state{
         socket = Socket,
         player = Player,
@@ -39,8 +39,8 @@ init(Socket) ->
     lager:info("player created ~p", [State]),
     {ok, State}.
 
-handle_call({auth, Id, Name, Rating, PlayerSrv}, _From, State = #state{socket = PlayerSock, player=Player}) ->
-    AuthPlayer = Player#player{id = Id, name = Name, rating = Rating},
+handle_call({auth, Id, Name, Wallet, Battles, Won, Rating, Position, PlayerSrv}, _From, State = #state{socket = PlayerSock, player=Player}) ->
+    AuthPlayer = Player#player{id = Id, name = Name, wallet = Wallet, battles = Battles, won = Won, rating = Rating, position = Position},
     st_player_storage:update_player(AuthPlayer, PlayerSrv, PlayerSock),
     State2 = State#state{player = AuthPlayer, mode = server},
     {reply, ok, State2};
