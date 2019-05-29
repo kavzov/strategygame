@@ -32,7 +32,7 @@ start_link(Player1, Player2, BoardSize) ->
     gen_server:start_link(?MODULE, [Player1, Player2, BoardSize], []).
 
 plr_cmd(GameSrv, PlrSock, Cmd) ->
-    case maps:to_list(st_game_maker:get_game(GameSrv)) of
+    case maps:to_list(st_game_maker:get_game_by_srv(GameSrv)) of
         [_Game] -> 
             gen_server:call(GameSrv, {cmd, PlrSock, Cmd});
         [] ->
@@ -65,9 +65,11 @@ stop_game_player(PlayerSrv) ->
 
 stop_game(WinnerSock, LoserSock, Players) ->
     send_info_to_players(Players, 'EXIT_BATTLE'),
-    st_game_maker:del_game(self()),
     WinnerId = maps:get(id, maps:get(WinnerSock, Players)),
     LoserId = maps:get(id, maps:get(LoserSock, Players)),
+    GameId = st_game_maker:get_game_id(self()),
+    st_bet_storage:handle_bets(GameId, WinnerId),
+    st_game_maker:del_game(self()),
     db_end_game(WinnerId, LoserId),
     ok.
 
