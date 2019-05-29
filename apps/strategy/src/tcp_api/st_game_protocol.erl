@@ -9,6 +9,7 @@
 -define(SERVER_MODE, server).
 -define(BATTLE_MODE, battle).
 -define(BET_MODE, bet).
+-define(PROMPT, <<"> ">>).
 
 -include("../game/st_game.hrl").
 
@@ -69,7 +70,7 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 					st_player_srv:stop(PlayerSrv),
 					ok = Transport:close(Socket);
 				{_Unknown, ?INIT_MODE} ->
-					Reply = <<"Unknown command\r\n">>,
+					Reply = <<"Unknown command\r\n", ?PROMPT/binary>>,
 					Transport:send(Socket, Reply),
 					loop(State);
 
@@ -80,9 +81,9 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 				{<<"game ", WidthHeight/binary>>, ?SERVER_MODE} ->
 					case handle_game(PlayerSrv, WidthHeight) of
 						ok -> PlayerSrv ! 'SET_BATTLE_MODE';
-						{error, badarg} -> Transport:send(Socket, <<"Wrong battle field dimension parameters.\r\n">>);
-						{error, badmatch} -> Transport:send(Socket, <<"Wrong count of battle field dimension parameters.\r\n">>);
-						{error, badsize} -> Transport:send(Socket, <<"Side size is out of range.\r\n">>)
+						{error, badarg} -> Transport:send(Socket, <<"Wrong battle field dimension parameters.\r\n", ?PROMPT/binary>>);
+						{error, badmatch} -> Transport:send(Socket, <<"Wrong count of battle field dimension parameters.\r\n", ?PROMPT/binary>>);
+						{error, badsize} -> Transport:send(Socket, <<"Side size is out of range.\r\n", ?PROMPT/binary>>)
 					end,
 					loop(State);
 				{<<"play ", GameId/binary>>, ?SERVER_MODE} ->
@@ -91,7 +92,7 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 							% PlayerSrv ! {'SET_BATTLE_MODE', GameSrv},
 							loop(State);
 						game_not_found ->
-							Transport:send(Socket, <<"There is no game number ", GameId/binary>>),
+							Transport:send(Socket, <<"There is no game number ", GameId/binary, "\r\n", ?PROMPT/binary>>),
 							loop(State)
 					end;
 				{<<"game">>, ?SERVER_MODE} ->
@@ -104,10 +105,8 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 					st_player_storage:del_player(Socket),
 					ok = Transport:close(Socket);
 				{<<"bet ", Bet/binary>>, ?SERVER_MODE} ->
-					% bet GameId PlayerId Amount Curreency
 					Reply = handle_bet(Bet, PlayerId),
-					Transport:send(Socket, Reply),
-					% PlayerSrv ! 'SET_BET_MODE',
+					Transport:send(Socket, <<Reply/binary, ?PROMPT/binary>>),
 					loop(State);
 				{<<"me">>, ?SERVER_MODE} ->
 					ok;
@@ -115,7 +114,7 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 					ok;
 				
 				{_Unknown, ?SERVER_MODE} ->
-					Reply = <<"Unknown command\r\n">>,
+					Reply = <<"Unknown command\r\n", ?PROMPT/binary>>,
 					Transport:send(Socket, Reply),
 					loop(State);
 
@@ -148,20 +147,20 @@ handle_auth(PlayerSrv, Token0) ->
             case epgsql:equery(C, "WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT id, name, wallet::NUMERIC, battles, won, rating, position FROM summary WHERE token=$1;", [Token]) of
                 {ok, _, []} ->
 					ok = epgsql:close(C),
-					{ok, <<"Authentication failed\r\n">>};
+					{ok, <<"Authentication failed\r\n", ?PROMPT/binary>>};
                 {ok, _, [{Id, Name, Wallet, Battles, Won, Rating, Position}]} ->
 					ok = epgsql:close(C),
 					% prevent relogin
 					case st_player_storage:get_player_by_id(Id) of
 						{ok, _Player} ->
-							{error, <<"You are already logined\r\n">>};
+							{error, <<"You are already logined\r\n", ?PROMPT/binary>>};
 						error ->
 							st_player_srv:auth(PlayerSrv, Id, Name, binary_to_float(Wallet), Battles, Won, Rating, Position),
 							{ok, get_server_msg(integer_to_binary(Id), Name, Wallet, integer_to_binary(Battles), integer_to_binary(Won), integer_to_binary(Rating), integer_to_binary(Position))}
 					end;
                 {error, _Reason} ->
 					ok = epgsql:close(C),
-					{error, <<"Authentication error\r\n">>}
+					{error, <<"Authentication error\r\n", ?PROMPT/binary>>}
             end;
         {error, Reason} -> lager:error("NO CONNECTION TO DB~n~p", [Reason])
     end.
@@ -188,17 +187,19 @@ handle_bet(BetStr, BeterId) ->
 		[GameId, PlayerId, BinBet] = binary:split(BetStr, [<<" ">>, <<"\r">>, <<"\n">>], [global, trim_all]),
 		check_game_id(GameId, Games),
 		check_player_id(PlayerId, Games),
-		Bet = check_bet(BeterId, BinBet)
-		% st_bet_storage:add_bet(BeterId, Bet, GameId, PlayerId)
+		Bet = check_bet(BeterId, BinBet),
+		Game = st_game_maker:get_game(GameId),
+		Player = maps:get(binary_to_integer(PlayerId), maps:get(players, Game)),
+		Coef = maps:get(coef, Player),
+		st_bet_storage:add_bet(BeterId, Bet, Coef, GameId, binary_to_integer(PlayerId))
 	catch
 		error:{badmatch, _} -> lager:error("Bad arguments"), {error, badmatch};
 		throw:badgameid 	-> lager:error("Bad game ID"), {error, badgameid};
 		throw:badplayerid 	-> lager:error("Bad player ID"), {error, badplayerid};
 		throw:badbinnum		-> lager:error("Bet not a number"), {error, badbinnum};
-		throw:negativebet	-> lager:error("Not positive Bet"), {error, negativebet};
-		throw:bigbet		-> lager:error("Big Bet"), {error, bigbet}
-	end,
-	<<"ok\r\n">>.
+		throw:negativebet	-> lager:error("Not positive Bet"), <<"You bet not positive amount\r\n", ?PROMPT/binary>>;
+		throw:bigbet		-> lager:error("The player has not enough money to bet"), <<"You don't have enough money\r\n", ?PROMPT/binary>>
+	end.
 
 handle_list() ->
 	Wait = handle_list(wait),
@@ -229,7 +230,7 @@ handle_list(battle) ->
 		Games
 	),
 	case Reply of
-		StartList -> <<"\r\nThere is no games for bets.\r\nRefresh the list later.\r\n">>;
+		StartList -> <<"\r\nThere is no games for bets.\r\nRefresh the list later.\r\n", ?PROMPT/binary>>;
 		_ -> Reply
 	end;
 
@@ -251,7 +252,7 @@ handle_list(wait) ->
 		Games
 	),
 	case Reply of
-		StartList -> <<"\r\nThere is no available players.\r\nYou may start a new game by 'game W H' command.\r\n">>;
+		StartList -> <<"\r\nThere is no available players.\r\nYou may start a new game by 'game W H' command.\r\n", ?PROMPT/binary>>;
 		_ -> Reply
 	end.
 
@@ -329,11 +330,11 @@ Hi! It's Polyana game.\r\nAuthenticate and play or go out)
 +---------------------------+
 | exit       | go out       |
 +---------------------------+
-\r\n">>.
+\r\n", ?PROMPT/binary>>.
 
 get_server_msg(_Id, Name, _Wallet, Battles, Won, Rating, Position) ->
 	HLine = <<"\r\n-----------------------------------------------------\r\n">>,
 	ServerMsg = server_msg(),
 	WaitPlayers = handle_list(wait),
 	BetBattles = handle_list(battle),
-	<<HLine/binary, "Welcome, ", Name/binary, "!\r\nYou participated in ", Battles/binary, " battles. Won in ", Won/binary, ".\r\nYour rating - ", Rating/binary, ". Position in the championship - ", Position/binary, ".", HLine/binary, WaitPlayers/binary, BetBattles/binary, ServerMsg/binary>>.
+	<<HLine/binary, "Welcome, ", Name/binary, "!\r\nYou participated in ", Battles/binary, " battles. Won in ", Won/binary, ".\r\nYour rating - ", Rating/binary, ". Position in the championship - ", Position/binary, ".", HLine/binary, WaitPlayers/binary, BetBattles/binary, ServerMsg/binary, ?PROMPT/binary>>.
