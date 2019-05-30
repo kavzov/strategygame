@@ -3,7 +3,7 @@
 
 -export([start_link/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3,
-         connect/2, add_new_game/2, get_games/1, add_game/2, get_game/1, get_game_by_srv/1, get_game_id/1, play_game/2, get_all_games/0, del_game/1, del_player_from_waitlist/1
+         connect/2, add_new_game/2, get_games/0, get_games/1, add_game/2, get_game/1, get_game_by_srv/1, get_game_id/1, play_game/2, get_all_games/0, del_game/1, del_player_from_waitlist/1
 ]).
 
 % -record(state, {}).
@@ -62,6 +62,9 @@ play_game(GameId, PlayerSrv) ->
     % GET OPNT SOCKET
     gen_server:call(?MODULE, {play_game, GameId, Id, Name, Wallet, Battles, Won, Rating, Position, PlayerSock, PlayerSrv, GameSrv}).
 
+get_games() ->
+    gen_server:call(?MODULE, get_games).
+
 get_games(Status) ->
     gen_server:call(?MODULE, {get_games, Status}).
 
@@ -77,7 +80,7 @@ handle_call({add_new_game, Width, Height, Id, Name, Wallet, Battles, Won, Rating
     Player = #{name => Name, wallet => Wallet, battles => Battles, won => Won, rating => Rating, position => Position, srv => PlayerSrv, socket => PlayerSock, coef => set_bet_coef(Rating)},
     Game = #{status => wait, players => #{Id => Player}, srv => GameSrv, size => [Width, Height]},
     gen_tcp:send(PlayerSock, <<"Wait for an opponent...\r\n">>),
-    {reply, ok, maps:put(get_id(), Game, State)};
+    {reply, ok, maps:put(get_id(maps:keys(State)), Game, State)};
 
 handle_call({play_game, GameId, PlayerId, PlayerName, Wallet, Battles, Won, Rating, Position, PlayerSock, PlayerSrv, _GameSrv}, _From, State) ->
     case maps:find(GameId, State) of
@@ -110,6 +113,9 @@ handle_call({get_game_id, GameSrv}, _From, State) ->
         maps:get(srv, Game) =:= GameSrv end, State),
     [GameId] = maps:keys(Res),
     {reply, GameId, State};
+
+handle_call(get_games, _From, State) ->
+    {reply, State, State};
 
 handle_call({get_games, Status}, _From, State) ->
     Reply = maps:filter(
@@ -151,8 +157,19 @@ code_change(_OldVersion, State, _Extra) ->
 
 
 % Utlis
-get_id() ->
-    integer_to_binary(rand:uniform(100)).
+get_id([]) -> 1;
+get_id(Ids) ->
+    IdMax = lists:max(Ids),
+    IdsCand = lists:seq(1, IdMax),
+    get_id([], IdMax, Ids, IdsCand).
+get_id([], IdMax, _Ids, []) -> IdMax + 1;
+get_id([], IdMax, Ids, [Id | Rest]) ->
+    case lists:member(Id, Ids) of
+        false -> Id;
+        true  -> get_id([], IdMax, Ids, Rest)
+    end.
+
+
 
 set_bet_coef(Rating) ->
     list_to_float(float_to_list(1.9 - Rating/100, [{decimals, 2}])).

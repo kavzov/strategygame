@@ -93,6 +93,9 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 							loop(State);
 						game_not_found ->
 							Transport:send(Socket, <<"There is no game number ", GameId/binary, "\r\n", ?PROMPT/binary>>),
+							loop(State);
+						bad_game_id ->
+							Transport:send(Socket, <<"Bad game ID\r\n", ?PROMPT/binary>>),
 							loop(State)
 					end;
 				{<<"game">>, ?SERVER_MODE} ->
@@ -148,7 +151,7 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 
 handle_auth(PlayerSrv, Token0) ->
 	Token = re:replace(Token0, <<"^ +">>, <<>>, [{return, binary}]),
-	lager:info("Trying to login with token '~p'", [Token]),
+	lager:info("Trying to login with token '~p'", [binary_to_list(Token)]),
 	case db_select("WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT id, name, wallet::NUMERIC, battles, won, rating, position FROM summary WHERE token=$1;", [Token]) of
 		{ok, []} ->
 			lager:warning("Authentication failed with Token: ~p", [Token]),
@@ -182,20 +185,34 @@ handle_game(PlayerSrv, WidthHeight) ->
 		error:{badmatch, _} -> {error, badmatch}
 	end.
 
-handle_play(GameId, PlayerSrv) ->
-	st_game_maker:play_game(GameId, PlayerSrv).
+handle_play(GameIdBin, PlayerSrv) ->
+	try
+		GameId = binary_to_integer(GameIdBin),
+		Games = st_game_maker:get_games(wait),
+		check_game_id(GameId, Games),
+		Game = st_game_maker:get_game(GameId),
+		case maps:get(status, Game) of
+			battle -> game_not_found;
+			_ -> st_game_maker:play_game(GameId, PlayerSrv)
+		end
+	catch
+		error:badarg -> bad_game_id;
+		throw:badgameid -> game_not_found
+	end.
 
 handle_bet(BetStr, BeterId) ->
 	Games = st_game_maker:get_games(battle),
 	try
-		[GameId, PlayerId, BinBet] = binary:split(BetStr, [<<" ">>, <<"\r">>, <<"\n">>], [global, trim_all]),
+		[GameIdBin, PlayerIdBin, BetBin] = binary:split(BetStr, [<<" ">>, <<"\r">>, <<"\n">>], [global, trim_all]),
+		GameId = binary_to_integer(GameIdBin),
+		PlayerId = binary_to_integer(PlayerIdBin),
 		check_game_id(GameId, Games),
 		check_player_id(PlayerId, Games),
-		Bet = check_bet(BeterId, BinBet),
+		Bet = check_bet(BeterId, BetBin),
 		Game = st_game_maker:get_game(GameId),
-		Player = maps:get(binary_to_integer(PlayerId), maps:get(players, Game)),
+		Player = maps:get(PlayerId, maps:get(players, Game)),
 		Coef = maps:get(coef, Player),
-		st_bet_storage:add_bet(BeterId, Bet, Coef, GameId, binary_to_integer(PlayerId))
+		st_bet_storage:add_bet(BeterId, Bet, Coef, GameId, PlayerId)
 	catch
 		error:{badmatch, _} -> lager:error("Bad arguments"), {error, badmatch};
 		throw:badgameid 	-> lager:error("Bad game ID"), {error, badgameid};
@@ -216,8 +233,9 @@ handle_list(battle) ->
 	StartList = <<"\r\nRunning games available for bets:\r\n", HLine/binary>>,
 	Reply = maps:fold(
 		fun(GameId, Game, BinStr) ->
+			GameIdBin = integer_to_binary(GameId),
 			[Width, Height] = lists:map(fun(Val) -> integer_to_binary(Val) end, maps:get(size, Game)),
-			BoardSize = <<GameId/binary, ". Game ", Width/binary, " x ", Height/binary, "\r\n--------------\r\n">>,
+			BoardSize = <<GameIdBin/binary, ". Game ", Width/binary, " x ", Height/binary, "\r\n--------------\r\n">>,
 			Players = maps:fold(
 				fun(PlrId, Plr, Out) ->
 					Id = integer_to_binary(PlrId),
@@ -244,13 +262,14 @@ handle_list(wait) ->
 	StartList = <<"\r\nWaiting players:\r\n====================\r\n">>,
 	Reply = maps:fold(
 		fun(GameId, Game, BinStr) ->
+			GameIdBin = integer_to_binary(GameId),
 			[Width, Height] = lists:map(fun(Val) -> integer_to_binary(Val) end, maps:get(size, Game)),
 			BoardSize = <<Width/binary, " x ", Height/binary>>,
 			[Player] = maps:values(maps:get(players, Game)),
 			PlrName = maps:get(name, Player),
 			Rating = maps:get(rating, Player),
 			PlrRating = integer_to_binary(Rating),
-			<<BinStr/binary, "Game ID: ",GameId/binary, "\r\nPlayer: ", PlrName/binary, "\r\nRating: ", PlrRating/binary, "\r\nBoard size: ", BoardSize/binary, "\r\n", HLine/binary>>
+			<<BinStr/binary, "Game ID: ",GameIdBin/binary, "\r\nPlayer: ", PlrName/binary, "\r\nRating: ", PlrRating/binary, "\r\nBoard size: ", BoardSize/binary, "\r\n", HLine/binary>>
 		end,
 		StartList,
 		Games
@@ -346,13 +365,13 @@ check_player_id(PlayerId, Games) ->
 		fun(_GameId, Game, Acc) -> Acc ++ maps:keys(maps:get(players, Game)) end,
 		[], Games
 	),
-	case lists:member(binary_to_integer(PlayerId), PlayersIds) of
+	case lists:member(PlayerId, PlayersIds) of
 		true -> ok;
 		false -> throw(badplayerid)
 	end.
 
-check_bet(PlayerId, BinBet) ->
-	Bet = bin_to_num(BinBet),
+check_bet(PlayerId, BetBin) ->
+	Bet = bin_to_num(BetBin),
 	if Bet =< 0 -> throw(negativebet);
 	true ->
 		case db_select("SELECT wallet FROM players WHERE id=$1;", [PlayerId]) of
