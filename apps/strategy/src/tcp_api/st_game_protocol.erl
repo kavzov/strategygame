@@ -108,10 +108,15 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 					Reply = handle_bet(Bet, PlayerId),
 					Transport:send(Socket, <<Reply/binary, ?PROMPT/binary>>),
 					loop(State);
-				{<<"me">>, ?SERVER_MODE} ->
-					ok;
+				{<<"info">>, ?SERVER_MODE} ->
+					% TODO case Reply of {ok, .... {error, ...
+					Reply = handle_info(PlayerId),
+					Transport:send(Socket, Reply),
+					loop(State);
 				{<<"table">>, ?SERVER_MODE} ->
-					ok;
+					Reply = handle_table(),
+					Transport:send(Socket, Reply),
+					loop(State);
 				
 				{_Unknown, ?SERVER_MODE} ->
 					Reply = <<"Unknown command\r\n", ?PROMPT/binary>>,
@@ -141,29 +146,25 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 handle_auth(PlayerSrv, Token0) ->
 	Token = re:replace(Token0, <<"^ +">>, <<>>, [{return, binary}]),
 	lager:info("Trying to login with token '~p'", [Token]),
-	% TODO make function for the dbquery
-    case epgsql:connect("localhost", "strategy", "strategy", #{database => "strategy", port => 15432, timeout => 5000}) of
-        {ok, C} ->
-            case epgsql:equery(C, "WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT id, name, wallet::NUMERIC, battles, won, rating, position FROM summary WHERE token=$1;", [Token]) of
-                {ok, _, []} ->
-					ok = epgsql:close(C),
-					{ok, <<"Authentication failed\r\n", ?PROMPT/binary>>};
-                {ok, _, [{Id, Name, Wallet, Battles, Won, Rating, Position}]} ->
-					ok = epgsql:close(C),
-					% prevent relogin
-					case st_player_storage:get_player_by_id(Id) of
-						{ok, _Player} ->
-							{error, <<"You are already logined\r\n", ?PROMPT/binary>>};
-						error ->
-							st_player_srv:auth(PlayerSrv, Id, Name, binary_to_float(Wallet), Battles, Won, Rating, Position),
-							{ok, get_server_msg(integer_to_binary(Id), Name, Wallet, integer_to_binary(Battles), integer_to_binary(Won), integer_to_binary(Rating), integer_to_binary(Position))}
-					end;
-                {error, _Reason} ->
-					ok = epgsql:close(C),
-					{error, <<"Authentication error\r\n", ?PROMPT/binary>>}
-            end;
-        {error, Reason} -> lager:error("NO CONNECTION TO DB~n~p", [Reason])
-    end.
+	case db_select("WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT id, name, wallet::NUMERIC, battles, won, rating, position FROM summary WHERE token=$1;", [Token]) of
+		{ok, []} ->
+			lager:warning("Authentication failed with Token: ~p", [Token]),
+			{ok, <<"Authentication failed\r\n", ?PROMPT/binary>>};
+		{ok, [{Id, Name, Wallet, Battles, Won, Rating, Position}]} ->
+			case st_player_storage:get_player_by_id(Id) of
+				{ok, _Player} ->
+					lager:warning("Trying to secondary login of: ~p", [Name]),
+					{error, <<"You are already logined\r\n", ?PROMPT/binary>>};
+				error ->
+					lager:info("Success authentication of ~p", [binary_to_list(Name)]),
+					st_player_srv:auth(PlayerSrv, Id, Name, binary_to_float(Wallet), Battles, Won, Rating, Position),
+					{ok, get_server_msg(integer_to_binary(Id), Name, Wallet, integer_to_binary(Battles), integer_to_binary(Won), integer_to_binary(Rating), integer_to_binary(Position))}
+			end;
+		{error, Reason} ->
+			lager:error("DB SELECT error: ~p", [Reason]),
+			{error, <<"Authentication error\r\n", ?PROMPT/binary>>}
+	end.
+
 
 handle_game(PlayerSrv, WidthHeight) ->
 	try
@@ -256,7 +257,66 @@ handle_list(wait) ->
 		_ -> Reply
 	end.
 
+handle_info(PlayerId) ->
+	case db_select("WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT id, name, wallet::NUMERIC, battles, won, rating, position FROM summary WHERE id=$1;", [PlayerId]) of
+		{ok, []} ->
+			lager:warning("Player with ID ~p trying to get info. FAILED.", [PlayerId]),
+			<<"Get info fail\r\n", ?PROMPT/binary>>;
+		{ok, [{Id, Name, Wallet, Battles, Won, Rating, Position}]} ->
+			BinId = integer_to_binary(Id),
+			BinBattles = integer_to_binary(Battles),
+			BinWon = integer_to_binary(Won),
+			BinRating = integer_to_binary(Rating),
+			BinPosition = integer_to_binary(Position),
+			<<"------------------
+Name: ", Name/binary, "
+ID: ", BinId/binary, "
+Wallet: ", Wallet/binary, " $
+Battles: ", BinBattles/binary, "
+Won: ", BinWon/binary, "
+Rating: ", BinRating/binary, "
+Position: ", BinPosition/binary, "
+------------------
+", ?PROMPT/binary>>;
+		{error, Reason} ->
+			lager:error("DB SELECT error: ~p", [Reason]),
+			<<"Error selecting info from database\r\n", ?PROMPT/binary>>
+	end.
 
+handle_table() ->
+	case db_select("WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT position, name, id, battles, won, rating FROM summary") of
+		{ok, Players} ->
+			PosCellWidth = 4, NameCellWidth = 15, IdCellWidth = 4, BattlesCellWidth = 9, WonCellWidth = 5, RatingCellWidth = 8,
+			HPos = val_to_table(<<"N">>, PosCellWidth),
+			HName = val_to_table(<<"Name">>, NameCellWidth),
+			HId = val_to_table(<<"Id">>, IdCellWidth),
+			HBattles = val_to_table(<<"Battles">>, BattlesCellWidth),
+			HWon = val_to_table(<<"Won">>, WonCellWidth),
+			HRating = val_to_table(<<"Rating">>, RatingCellWidth),
+			HLine = bin_ch_n_times(<<"-">>, PosCellWidth + NameCellWidth + IdCellWidth + BattlesCellWidth + WonCellWidth + RatingCellWidth + 7),
+			Reply = lists:foldl(
+				fun(P, Res) ->
+					{Position, Name, Id, Battles, Won, Rating} = P,
+					BinPosition = val_to_table(integer_to_binary(Position), PosCellWidth),
+					BinName = val_to_table(Name, NameCellWidth),
+					BinId = val_to_table(integer_to_binary(Id), IdCellWidth),
+					BinBattles = val_to_table(integer_to_binary(Battles), BattlesCellWidth),
+					BinWon = val_to_table(integer_to_binary(Won), WonCellWidth),
+					BinRating = val_to_table(integer_to_binary(Rating), RatingCellWidth),
+					<<Res/binary, "|", BinPosition/binary, "|", BinName/binary, "|", BinId/binary, "|", BinBattles/binary, "|", BinWon/binary, "|", BinRating/binary, "|\r\n">>
+				end,
+				<<HLine/binary, "\r\n|", HPos/binary, "|", HName/binary, "|", HId/binary, "|", HBattles/binary, "|", HWon/binary, "|", HRating/binary, "|\r\n", HLine/binary, "\r\n">>,
+				Players
+			),
+			<<Reply/binary, HLine/binary, "\r\n", ?PROMPT/binary>>;
+		{error, Reason} ->
+			lager:error("DB SELECT error: ~p", [Reason]),
+			<<"Error selecting players info from database\r\n", ?PROMPT/binary>>
+	end.
+
+
+
+% Utils
 iodata_init_handle(Data) ->
     % remove possible leading spaces
     Data1 = re:replace(Data, <<"^ +">>, <<>>, [{return, binary}]),
@@ -290,23 +350,16 @@ check_bet(PlayerId, BinBet) ->
 	Bet = bin_to_num(BinBet),
 	if Bet =< 0 -> throw(negativebet);
 	true ->
-		case epgsql:connect("localhost", "strategy", "strategy", #{database => "strategy", port => 15432, timeout => 5000}) of
-			{ok, C} ->
-				case epgsql:equery(C, "SELECT wallet FROM players WHERE id=$1;", [PlayerId]) of
-					{ok, _, []} ->
-						ok = epgsql:close(C),
-						{ok, <<"No wallet)\r\n">>};
-					{ok, _, [{BinWallet}]} ->
-						ok = epgsql:close(C),
-						Wallet = bin_to_num(BinWallet),
-						if Wallet < Bet -> throw(bigbet);
-						true -> Bet
-						end;
-					{error, _Reason} ->
-						ok = epgsql:close(C),
-						{error, <<"Error\r\n">>}
+		case db_select("SELECT wallet FROM players WHERE id=$1;", [PlayerId]) of
+			{ok, []} ->
+				{ok, <<"No wallet)\r\n">>};
+			{ok, [{BinWallet}]} ->
+				Wallet = bin_to_num(BinWallet),
+				if Wallet < Bet -> throw(bigbet);
+				true -> Bet
 				end;
-			{error, Reason} -> lager:error("No connection to database during getting of player wallet amount:~n~p", [Reason])
+			{error, _Reason} ->
+				{error, <<"Error\r\n">>}
 		end
 	end.
 
@@ -319,6 +372,21 @@ bin_to_num(BinNum) ->
 				nomatch	   -> throw(badbinnum)
 			end
 	end.
+
+val_to_table(Val, CellWidth) ->
+	SP = <<" ">>,
+	ValWidth = byte_size(Val),
+	lists:foldl(
+		fun(_, Str) -> <<Str/binary, SP/binary>> end,
+		<<SP/binary, Val/binary>>,
+		lists:seq(1, CellWidth - ValWidth - 1)
+	).
+
+bin_ch_n_times(Ch, N) ->
+	lists:foldl(
+		fun(_, Str) -> <<Str/binary, Ch/binary>> end,
+		<<>>, lists:seq(1, N)
+	).
 
 get_init_msg() ->
 	<<"
@@ -338,3 +406,27 @@ get_server_msg(_Id, Name, _Wallet, Battles, Won, Rating, Position) ->
 	WaitPlayers = handle_list(wait),
 	BetBattles = handle_list(battle),
 	<<HLine/binary, "Welcome, ", Name/binary, "!\r\nYou participated in ", Battles/binary, " battles. Won in ", Won/binary, ".\r\nYour rating - ", Rating/binary, ". Position in the championship - ", Position/binary, ".", HLine/binary, WaitPlayers/binary, BetBattles/binary, ServerMsg/binary, ?PROMPT/binary>>.
+
+
+% TODO pass it (and from st_bet_storage) to include/db.hrl
+db_connect() ->
+    DbName = "strategy",
+    {ok, DbHost} = application:get_env(strategy, db_host),
+    {ok, DbPort} = application:get_env(strategy, db_port),
+    {ok, DbUser} = application:get_env(strategy, db_user),
+    {ok, DbPassword} = application:get_env(strategy, db_password),
+    {ok, DbTimeout} = application:get_env(strategy, db_timeout),
+    epgsql:connect(DbHost, DbUser, DbPassword, #{database => DbName, port => DbPort, timeout => DbTimeout}).
+
+db_select_query(C, Query, Params) ->
+    case epgsql:equery(C, Query, Params) of
+        {ok, _Columns, Rows} -> epgsql:close(C), {ok, Rows};
+        {error, Reason} -> epgsql:close(C), {error, Reason}                    
+    end.
+
+db_select(Query) -> db_select(Query, []).
+db_select(Query, Params) ->
+    case db_connect() of
+        {ok, C} -> db_select_query(C, Query, Params);
+        {error, Reason} -> {error, Reason} 
+    end.
