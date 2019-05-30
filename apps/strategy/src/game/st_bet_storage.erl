@@ -41,13 +41,12 @@ handle_call({add_bet, BeterId, Bet, Coef, GameId, PlayerId}, _From, State) ->
 
 handle_call({handle_bets, GameId, WinnerId}, _From, State) ->
     BetWinners = ets:match(?MODULE, {'$1', '$2', '$3', GameId, WinnerId}),
-    lager:info("BET WINNERS: ~p", [BetWinners]),
     lists:foreach(fun([BeterId, Bet, Coef]) ->
         {ok, {_, BeterName, _, _, _, _, _, _, BeterSock}} = st_player_storage:get_player_by_id(BeterId),
         case db_update("UPDATE players SET wallet=wallet+$1 WHERE id=$2;", [Bet*Coef, BeterId]) of
             {ok, _Count} ->
                 lager:info("Player ~p (~p) won ~p.", [BeterName, BeterId, Bet*Coef]),
-                gen_tcp:send(BeterSock, <<"Congrats! Your bet was won. The win added to your wallet.\r\n">>);
+                gen_tcp:send(BeterSock, <<"Congrats! Your bet was won. The win added to your wallet.\r\n> ">>);   % TODO ?PROMT instead of '> '
             {error, not_updated} ->
                 lager:warning("Handle bet db wasn't updated"),
                 gen_tcp:send(BeterSock, <<"The bet wasn't handled\r\n">>);
