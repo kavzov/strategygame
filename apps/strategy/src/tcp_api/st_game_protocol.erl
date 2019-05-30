@@ -117,7 +117,10 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 					Reply = handle_table(),
 					Transport:send(Socket, Reply),
 					loop(State);
-				
+				{<<"help">>, ?SERVER_MODE} ->
+					Reply = handle_help(),
+					Transport:send(Socket, Reply),
+					loop(State);
 				{_Unknown, ?SERVER_MODE} ->
 					Reply = <<"Unknown command\r\n", ?PROMPT/binary>>,
 					Transport:send(Socket, Reply),
@@ -314,7 +317,9 @@ handle_table() ->
 			<<"Error selecting players info from database\r\n", ?PROMPT/binary>>
 	end.
 
-
+handle_help() ->
+	ServerMsg = server_msg(),
+	<<ServerMsg/binary, ?PROMPT/binary>>.
 
 % Utils
 iodata_init_handle(Data) ->
