@@ -28,8 +28,15 @@ handle_call({add_bet, BeterId, Bet, Coef, GameId, PlayerId}, _From, State) ->
     lager:info("Handle call for BET of ~p with coef ~p of player Id ~p on player Id ~p in the game Id ~p", [Bet, Coef, BeterId, PlayerId, GameId]),
     Reply = case db_update("UPDATE players SET wallet=wallet-$1 WHERE id=$2;", [Bet, BeterId]) of
         {ok, _Count} ->
+            BetBin = float_to_binary(Bet, [{decimals, 4}]),
+            CoefBin = float_to_binary(Coef, [{decimals, 4}]),
+            TheWin = Bet * Coef,
+            TheWinBin = float_to_binary(TheWin, [{decimals, 4}]),
+            Players = maps:get(players, st_game_maker:get_game(GameId)),
+            PlayerName = maps:get(name, maps:get(PlayerId, Players)),
+            [P1Nm, P2Nm] = maps:fold(fun(_ID, Plr, Acc)-> Acc ++ [maps:get(name, Plr)] end, [], Players),
             lager:info("The bet accepted"),
-            <<"Your bet accepted.\r\nBet details:\r\n">>;
+            <<"Your bet accepted.\r\nBet details:\r\nBattle ", P1Nm/binary, " vs ", P2Nm/binary, ".\r\nYou bet $", BetBin/binary, " to ", PlayerName/binary, " with coefficient of ", CoefBin/binary, ".\r\nYou may win $", TheWinBin/binary, ".\r\nGood luck!\r\n">>;
         {error, not_updated} ->
             lager:warning("The bet not accepted"),
             <<"The bet not accepted\r\n">>;
