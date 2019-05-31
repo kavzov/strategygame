@@ -111,13 +111,13 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 					Reply = handle_bet(Bet, PlayerId),
 					Transport:send(Socket, <<Reply/binary, ?PROMPT/binary>>),
 					loop(State);
-				{<<"info">>, ?SERVER_MODE} ->
+				{<<"i">>, ?SERVER_MODE} ->
 					% TODO case Reply of {ok, .... {error, ...
 					Reply = handle_info(PlayerId),
 					Transport:send(Socket, Reply),
 					loop(State);
-				{<<"table">>, ?SERVER_MODE} ->
-					Reply = handle_table(),
+				{<<"players">>, ?SERVER_MODE} ->
+					Reply = handle_players(),
 					Transport:send(Socket, Reply),
 					loop(State);
 				{<<"help">>, ?SERVER_MODE} ->
@@ -305,7 +305,7 @@ Position: ", BinPosition/binary, "
 			<<"Error selecting info from database\r\n", ?PROMPT/binary>>
 	end.
 
-handle_table() ->
+handle_players() ->
 	case db_select("WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT position, name, id, battles, won, rating FROM summary") of
 		{ok, Players} ->
 			PosCellWidth = 4, NameCellWidth = 15, IdCellWidth = 4, BattlesCellWidth = 9, WonCellWidth = 5, RatingCellWidth = 8,
