@@ -3,9 +3,6 @@
 
 -export([start_link/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3,
-
-            calc_coef/2, init_coef/1, rand_real/2,
-
          connect/2, add_new_game/2, get_games/0, get_games/1, add_game/2, get_game/1, get_game_by_srv/1, get_game_id/1, play_game/2, get_all_games/0, del_game/1, del_player_from_waitlist/1
 ]).
 
@@ -206,13 +203,6 @@ calc_coef(R1, R2) ->
             end
     end.
 
-
-add_coef(V) ->
-    AddCoef = math:log(V),
-    if AddCoef < 1 -> V;
-    true -> AddCoef
-end.
-
 init_coef(Rating) ->
     2 - Rating/100.
 
@@ -242,6 +232,3 @@ rand_real(Begin, End) ->
 
 fcoef(Coef) ->
     list_to_float(float_to_list(Coef, [{decimals, 4}])).
-
-set_bet_coef(Rating) ->
-    list_to_float(float_to_list(1.9 - Rating/100, [{decimals, 2}])).
