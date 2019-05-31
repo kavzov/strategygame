@@ -6,16 +6,16 @@ server_msg() ->
 +======================================================+
 | Command   | Action                                   |
 +======================================================+
-| list      | update list of players and games         |
+| i         | current player info (rating, money, ...) |
 +------------------------------------------------------+
-| info      | current player info (rating, money, ...) |
+| games     | waiting players and active games         |
 +------------------------------------------------------+
-| table     | players table with achievements          |
-+------------------------------------------------------+
-| play ID   | play game number ID (if there is)        |
+| players   | players table with achievements          |
 +------------------------------------------------------+
 | game W H  | start new game with dimension W x H      |
 |           | W - width, H - height (min: ", Min/binary, ", max: ", Max/binary, ")  |
++------------------------------------------------------+
+| play ID   | play game number ID (if there is)        |
 +------------------------------------------------------+
 | bet G P $ | make a bet: GameID, PlayerID, $um        |
 +------------------------------------------------------+
