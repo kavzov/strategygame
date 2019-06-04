@@ -78,9 +78,8 @@ Player 'A' lost the game.
 - log files  
 - save battle moves history  
 - registration server (Python, Django, DRF)
+- web interface
 - initial random closed fields
 - multiplayer mode
 - achivements
 - permissions
-
-
