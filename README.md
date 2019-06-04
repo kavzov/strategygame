@@ -81,5 +81,6 @@ Player 'A' lost the game.
 - initial random closed fields
 - multiplayer mode
 - achivements
+- permissions
 
 
