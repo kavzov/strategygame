@@ -12,6 +12,8 @@
 -define(PROMPT, <<"> ">>).
 
 -include("../game/st_game.hrl").
+-include("../player/st_player.hrl").
+
 
 -record(state, {
 	transport,
@@ -40,8 +42,6 @@ init(Ref, Transport, _Opts = []) ->
 	},
 	Transport:send(Socket, get_init_msg()),
 	loop(State).
-
--include("../player/st_player.hrl").
 
 loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = State) ->
 	{ok, ClientDisconnectTimeoutMin} = application:get_env(strategy, client_disconnect_timeout),
@@ -74,7 +74,7 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 					Transport:send(Socket, Reply),
 					loop(State);
 
-				{<<"list">>, ?SERVER_MODE} ->
+				{<<"games">>, ?SERVER_MODE} ->
 					Reply = handle_list(),
 					Transport:send(Socket, Reply),
 					loop(State);
@@ -240,9 +240,11 @@ handle_list(battle) ->
 				fun(PlrId, Plr, Out) ->
 					Id = integer_to_binary(PlrId),
 					Name = maps:get(name, Plr),
+					Battles = integer_to_binary(maps:get(battles, Plr)),
+					Won = integer_to_binary(maps:get(won, Plr)),
 					Rating = integer_to_binary(maps:get(rating, Plr)),
-					Coef = float_to_binary(maps:get(coef, Plr), [{decimals, 2}]),
-					<<Out/binary, Id/binary, ". ", Name/binary, ", rating: ", Rating/binary, ", Coef: ", Coef/binary, "\r\n">>
+					Coef = float_to_binary(maps:get(coef, Plr), [{decimals, 4}]),
+					<<Out/binary, Id/binary, ". ", Name/binary, ". Won ", Won/binary, " battles from ", Battles/binary, ". Rating: ", Rating/binary, ", Coef: ", Coef/binary, "\r\n">>
 				end,
 				<<>>, maps:get(players, Game)
 			),
