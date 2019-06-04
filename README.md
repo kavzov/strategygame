@@ -15,8 +15,29 @@ Initial state of 4x4 battle field:
 +---+---+---+---+
 ```
 Players make moves one by one to the up, right, left or down only.  
-The player who has nowhere to make a move loses.
+The player who has nowhere to make a move loses. For example:
+```
++---+---+---+---+
+| X | X | X |   |
++---+---+---+---+
+| A | X | X |   |
++---+---+---+---+
+| B | X | X | X |
++---+---+---+---+
+|   |   |   | X |
++---+---+---+---+
+```
+Player 'A' lost the game.  
 
+### Controllers:  
+```
++---+-------+---+
+| ↑ | up    | w |
+| → | right | d |
+| ↓ | down  | s |
+| ← | left  | a |
++---+-------+---+
+```
 
 ## TODO  
 - save battle moves history  
