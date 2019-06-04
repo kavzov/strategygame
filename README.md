@@ -77,6 +77,7 @@ Player 'A' lost the game.
 ## TODO  
 - log files  
 - save battle moves history  
+- registration server (Python, Django, DRF)
 - initial random closed fields
 - multiplayer mode
 - achivements
