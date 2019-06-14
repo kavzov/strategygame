@@ -1,5 +1,8 @@
-# xGlade
+# xGlade  
 _Simple console strategy game_  
+
+---
+
 To play the game:  
 - Pull down database, regserver and game images:  
 `docker pull kavzov/xgladedb`  
@@ -27,6 +30,7 @@ Use next API in your terminal:
 You may use curl, httpie, etc.   
 For example, to register, type:  
 `http http://localhost:8000/api/user/create username=your_nickname password=your_password`  
+  
 You'll receive a token to authenticate on game server and manipulate your account data on the regserver:  
 ```
 {
@@ -114,11 +118,11 @@ Player 'A' lost the game.
 ```
 
 ## TODO  
-- log files  
-- save battle moves history  
-- registration server (Python, Django, DRF)
-- web interface
-- initial random closed fields
-- multiplayer mode
-- achivements
-- permissions
+~~registration server (Python, Django, DRF)~~  
+~~web interface~~  
+log files  
+save battle moves history  
+initial random closed fields  
+multiplayer mode  
+achivements  
+permissions  
