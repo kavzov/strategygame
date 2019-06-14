@@ -1,5 +1,40 @@
 # xGlade
-_Simple console strategy game_ 
+_Simple console strategy game_  
+## Start
+`telnet host port`
+```
+Hi! It's xGlade game.
+Authenticate and play or go out)
++===========================+
+| Command    | Action       |
++===========================+
+| auth Token | authenticate |
++---------------------------+
+| exit       | go out       |
++---------------------------+
+```
+_Token_  can be obtained after registration (_comming soon_)  
+```
++======================================================+
+| Command   | Action                                   |
++======================================================+
+| i         | current player info (rating, money, ...) |
++------------------------------------------------------+
+| games     | waiting players and active games         |
++------------------------------------------------------+
+| players   | players table with achievements          |
++------------------------------------------------------+
+| game W H  | start new game with dimension W x H      |
+|           | W - width, H - height (min: 3, max: 10)  |
++------------------------------------------------------+
+| play ID   | play game number ID (if there is)        |
++------------------------------------------------------+
+| bet G P $ | make a bet: GameID, PlayerID, $um        |
++------------------------------------------------------+
+| exit      | leave the server                         |
++------------------------------------------------------+
+```
+
 ## Battle
 A battle glade may has different dimensions from 3 to 10 fields by width or height.   
 Initial state of 4x4 battle field:
@@ -40,6 +75,11 @@ Player 'A' lost the game.
 ```
 
 ## TODO  
-- save battle moves history  
 - log files  
-
+- save battle moves history  
+- registration server (Python, Django, DRF)
+- web interface
+- initial random closed fields
+- multiplayer mode
+- achivements
+- permissions
