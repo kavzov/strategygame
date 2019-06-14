@@ -70,8 +70,7 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 					st_player_srv:stop(PlayerSrv),
 					ok = Transport:close(Socket);
 				{_Unknown, ?INIT_MODE} ->
-					Reply = <<"Unknown command\r\n", ?PROMPT/binary>>,
-					Transport:send(Socket, Reply),
+					Transport:send(Socket, <<?PROMPT/binary>>),
 					loop(State);
 
 				{<<"games">>, ?SERVER_MODE} ->
@@ -111,7 +110,7 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 					Reply = handle_bet(Bet, PlayerId),
 					Transport:send(Socket, <<Reply/binary, ?PROMPT/binary>>),
 					loop(State);
-				{<<"i">>, ?SERVER_MODE} ->
+				{<<"me">>, ?SERVER_MODE} ->
 					% TODO case Reply of {ok, .... {error, ...
 					Reply = handle_info(PlayerId),
 					Transport:send(Socket, Reply),
@@ -125,8 +124,7 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 					Transport:send(Socket, Reply),
 					loop(State);
 				{_Unknown, ?SERVER_MODE} ->
-					Reply = <<"Unknown command\r\n", ?PROMPT/binary>>,
-					Transport:send(Socket, Reply),
+					Transport:send(Socket, <<?PROMPT/binary>>),
 					loop(State);
 
 				{Cmd, ?BATTLE_MODE} ->
@@ -152,7 +150,9 @@ loop(#state{socket = Socket, transport = Transport, player_srv = PlayerSrv} = St
 handle_auth(PlayerSrv, Token0) ->
 	Token = re:replace(Token0, <<"^ +">>, <<>>, [{return, binary}]),
 	lager:info("Trying to login with token '~p'", [binary_to_list(Token)]),
-	case db_select("WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT id, name, wallet::NUMERIC, battles, won, rating, position FROM summary WHERE token=$1;", [Token]) of
+	% case db_select("WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT id, name, wallet::NUMERIC, battles, won, rating, position FROM summary WHERE token=$1;", [Token]) of
+	case db_select("WITH summary AS (SELECT *, row_number() OVER() AS position FROM users) SELECT id, username, wallet::NUMERIC, battles, won, rating, position FROM summary JOIN (SELECT user_id FROM authtoken_token WHERE authtoken_token.key=$1) AS auth ON auth.user_id=id;", [Token]) of
+	% case db_select("WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, username) AS position FROM users) SELECT id, username, wallet::NUMERIC, battles, won, rating, position FROM summary JOIN (SELECT user_id FROM authtoken_token WHERE authtoken_token.key=$1) AS auth ON auth.user_id=id;", [Token]) of
 		{ok, []} ->
 			lager:warning("Authentication failed with Token: ~p", [Token]),
 			{ok, <<"Authentication failed\r\n", ?PROMPT/binary>>};
@@ -214,10 +214,10 @@ handle_bet(BetStr, BeterId) ->
 		Coef = maps:get(coef, Player),
 		st_bet_storage:add_bet(BeterId, Bet, Coef, GameId, PlayerId)
 	catch
-		error:{badmatch, _} -> lager:error("Bad arguments"), {error, badmatch};
-		throw:badgameid 	-> lager:error("Bad game ID"), {error, badgameid};
-		throw:badplayerid 	-> lager:error("Bad player ID"), {error, badplayerid};
-		throw:badbinnum		-> lager:error("Bet not a number"), {error, badbinnum};
+		error:{badmatch, _} -> lager:error("Bad arguments"), <<"Wrong amount of bet parameters. Exactly 3 parameters are expected.\r\n", ?PROMPT/binary>>;
+		throw:badgameid 	-> lager:error("Bad game ID"), <<"Wrong game ID.\r\n", ?PROMPT/binary>>;
+		throw:badplayerid 	-> lager:error("Bad player ID"), <<"Wrong player ID.\r\n", ?PROMPT/binary>>;
+		throw:badbinnum		-> lager:error("Bet not a number"), <<"Wrong bet number.\r\n", ?PROMPT/binary>>;
 		throw:negativebet	-> lager:error("Not positive Bet"), <<"You bet not positive amount\r\n", ?PROMPT/binary>>;
 		throw:bigbet		-> lager:error("The player has not enough money to bet"), <<"You don't have enough money\r\n", ?PROMPT/binary>>
 	end.
@@ -277,12 +277,13 @@ handle_list(wait) ->
 		Games
 	),
 	case Reply of
-		StartList -> <<"\r\nThere is no available players.\r\nYou may start a new game by 'game W H' command.\r\n", ?PROMPT/binary>>;
+		StartList -> <<"\r\nThere is no available players on the server now.\r\nYou may start a new game by 'game W H' command\r\nand wait for a second player.\r\n", ?PROMPT/binary>>;
 		_ -> Reply
 	end.
 
 handle_info(PlayerId) ->
-	case db_select("WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT id, name, wallet::NUMERIC, battles, won, rating, position FROM summary WHERE id=$1;", [PlayerId]) of
+	% case db_select("WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT id, name, wallet::NUMERIC, battles, won, rating, position FROM summary WHERE id=$1;", [PlayerId]) of
+	case db_select("WITH summary AS (SELECT *, row_number() OVER() AS position FROM users) SELECT id, username, wallet::NUMERIC, battles, won, rating, position FROM summary WHERE id=$1;", [PlayerId]) of
 		{ok, []} ->
 			lager:warning("Player with ID ~p trying to get info. FAILED.", [PlayerId]),
 			<<"Get info fail\r\n", ?PROMPT/binary>>;
@@ -308,7 +309,7 @@ Position: ", BinPosition/binary, "
 	end.
 
 handle_players() ->
-	case db_select("WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM players) SELECT position, name, id, battles, won, rating FROM summary") of
+	case db_select("WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM users) SELECT position, name, id, battles, won, rating FROM summary") of
 		{ok, Players} ->
 			PosCellWidth = 4, NameCellWidth = 15, IdCellWidth = 4, BattlesCellWidth = 9, WonCellWidth = 5, RatingCellWidth = 8,
 			HPos = val_to_table(<<"N">>, PosCellWidth),
@@ -376,7 +377,7 @@ check_bet(PlayerId, BetBin) ->
 	Bet = bin_to_num(BetBin),
 	if Bet =< 0 -> throw(negativebet);
 	true ->
-		case db_select("SELECT wallet FROM players WHERE id=$1;", [PlayerId]) of
+		case db_select("SELECT wallet FROM users WHERE id=$1;", [PlayerId]) of
 			{ok, []} ->
 				{ok, <<"No wallet)\r\n">>};
 			{ok, [{BinWallet}]} ->
@@ -416,7 +417,7 @@ bin_ch_n_times(Ch, N) ->
 
 get_init_msg() ->
 	<<"
-Hi! It's Polyana game.\r\nAuthenticate and play or go out)
+Hi! It's xGlade game.\r\nAuthenticate and play or go out)
 +===========================+
 | Command    | Action       |
 +===========================+
@@ -427,16 +428,22 @@ Hi! It's Polyana game.\r\nAuthenticate and play or go out)
 \r\n", ?PROMPT/binary>>.
 
 get_server_msg(_Id, Name, _Wallet, Battles, Won, Rating, Position) ->
-	HLine = <<"\r\n-----------------------------------------------------\r\n">>,
+	HLine = <<"\r\n-----------------------------------------------\r\n">>,
 	ServerMsg = server_msg(),
 	WaitPlayers = handle_list(wait),
 	BetBattles = handle_list(battle),
-	<<HLine/binary, "Welcome, ", Name/binary, "!\r\nYou participated in ", Battles/binary, " battles. Won in ", Won/binary, ".\r\nYour rating - ", Rating/binary, ". Position in the championship - ", Position/binary, ".", HLine/binary, WaitPlayers/binary, BetBattles/binary, ServerMsg/binary, ?PROMPT/binary>>.
+	MsgBegin = <<HLine/binary, "Welcome, ", Name/binary, "!">>,
+	MsgEnd = <<HLine/binary, WaitPlayers/binary, BetBattles/binary, ServerMsg/binary, ?PROMPT/binary>>,
+	case Battles of
+		<<"0">> -> <<MsgBegin/binary, MsgEnd/binary>>;
+		_ ->
+			<<MsgBegin/binary, "\r\nYou participated in ", Battles/binary, " battles. Won in ", Won/binary, ".\r\nYour rating - ", Rating/binary, ". Position in the championship - ", Position/binary, ".", MsgEnd/binary>>
+		end.
 
 
 % TODO pass it (and from st_bet_storage) to include/db.hrl
 db_connect() ->
-    DbName = "strategy",
+    {ok, DbName} = application:get_env(strategy, db_name),
     {ok, DbHost} = application:get_env(strategy, db_host),
     {ok, DbPort} = application:get_env(strategy, db_port),
     {ok, DbUser} = application:get_env(strategy, db_user),
