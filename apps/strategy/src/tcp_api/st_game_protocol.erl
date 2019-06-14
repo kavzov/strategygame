@@ -309,7 +309,7 @@ Position: ", BinPosition/binary, "
 	end.
 
 handle_players() ->
-	case db_select("WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, name) AS position FROM users) SELECT position, name, id, battles, won, rating FROM summary") of
+	case db_select("WITH summary AS (SELECT *, row_number() OVER (ORDER BY rating DESC, username) AS position FROM users) SELECT position, username, id, battles, won, rating FROM summary") of
 		{ok, Players} ->
 			PosCellWidth = 4, NameCellWidth = 15, IdCellWidth = 4, BattlesCellWidth = 9, WonCellWidth = 5, RatingCellWidth = 8,
 			HPos = val_to_table(<<"N">>, PosCellWidth),
