@@ -26,7 +26,7 @@ init(no_args) ->
 handle_call({add_bet, BeterId, Bet, Coef, GameId, PlayerId}, _From, State) ->
     ets:insert(?MODULE, {BeterId, Bet, Coef, GameId, PlayerId}),
     lager:info("Handle call for BET of ~p with coef ~p of player Id ~p on player Id ~p in the game Id ~p", [Bet, Coef, BeterId, PlayerId, GameId]),
-    Reply = case db_update("UPDATE players SET wallet=wallet-$1 WHERE id=$2;", [Bet, BeterId]) of
+    Reply = case db_update("UPDATE users SET wallet=wallet-$1 WHERE id=$2;", [Bet, BeterId]) of
         {ok, _Count} ->
             BetBin = float_to_binary(Bet, [{decimals, 4}]),
             CoefBin = float_to_binary(Coef, [{decimals, 4}]),
@@ -50,7 +50,7 @@ handle_call({handle_bets, GameId, WinnerId}, _From, State) ->
     BetWinners = ets:match(?MODULE, {'$1', '$2', '$3', GameId, WinnerId}),
     lists:foreach(fun([BeterId, Bet, Coef]) ->
         {ok, {_, BeterName, _, _, _, _, _, _, BeterSock}} = st_player_storage:get_player_by_id(BeterId),
-        case db_update("UPDATE players SET wallet=wallet+$1 WHERE id=$2;", [Bet*Coef, BeterId]) of
+        case db_update("UPDATE users SET wallet=wallet+$1 WHERE id=$2;", [Bet*Coef, BeterId]) of
             {ok, _Count} ->
                 lager:info("Player ~p (~p) won ~p.", [BeterName, BeterId, Bet*Coef]),
                 gen_tcp:send(BeterSock, <<"Congrats! Your bet was won. The win added to your wallet.\r\n> ">>);   % TODO ?PROMT instead of '> '
@@ -82,7 +82,7 @@ code_change(_OldVersion, State, _Extra) ->
 
 
 db_connect() ->
-    DbName = "strategy",
+    {ok, DbName} = application:get_env(strategy, db_name),
     {ok, DbHost} = application:get_env(strategy, db_host),
     {ok, DbPort} = application:get_env(strategy, db_port),
     {ok, DbUser} = application:get_env(strategy, db_user),

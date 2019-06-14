@@ -411,16 +411,22 @@ get_battle_controls() ->
 
 
 db_end_game(WinnerId, LoserId) ->
-    case epgsql:connect("localhost", "strategy", "strategy", #{database => "strategy", port => 15432, timeout => 10000}) of
+    {ok, DbName} = application:get_env(strategy, db_name),
+    {ok, DbHost} = application:get_env(strategy, db_host),
+    {ok, DbPort} = application:get_env(strategy, db_port),
+    {ok, DbUser} = application:get_env(strategy, db_user),
+    {ok, DbPassword} = application:get_env(strategy, db_password),
+    {ok, DbTimeout} = application:get_env(strategy, db_timeout),
+    case epgsql:connect(DbHost, DbUser, DbPassword, #{database => DbName, port => DbPort, timeout => DbTimeout}) of
         {ok, C} ->
             {ok, _} = epgsql:equery(C, "
-                                UPDATE players SET
+                                UPDATE users SET
                                 battles = battles + 1,
                                 rating = round(100 * won::numeric / battles::numeric) 
                                 WHERE id IN ($1, $2);
                                 ", [WinnerId, LoserId]),
             {ok, _} = epgsql:equery(C, "
-                                UPDATE players SET
+                                UPDATE users SET
                                 won = won + 1
                                 WHERE id = $1;
                                 ", [WinnerId]),
