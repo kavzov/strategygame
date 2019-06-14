@@ -214,12 +214,12 @@ handle_bet(BetStr, BeterId) ->
 		Coef = maps:get(coef, Player),
 		st_bet_storage:add_bet(BeterId, Bet, Coef, GameId, PlayerId)
 	catch
-		error:{badmatch, _} -> lager:error("Bad arguments"), <<"Wrong amount of bet parameters. Exactly 3 parameters are expected.\r\n", ?PROMPT/binary>>;
-		throw:badgameid 	-> lager:error("Bad game ID"), <<"Wrong game ID.\r\n", ?PROMPT/binary>>;
-		throw:badplayerid 	-> lager:error("Bad player ID"), <<"Wrong player ID.\r\n", ?PROMPT/binary>>;
-		throw:badbinnum		-> lager:error("Bet not a number"), <<"Wrong bet number.\r\n", ?PROMPT/binary>>;
-		throw:negativebet	-> lager:error("Not positive Bet"), <<"You bet not positive amount\r\n", ?PROMPT/binary>>;
-		throw:bigbet		-> lager:error("The player has not enough money to bet"), <<"You don't have enough money\r\n", ?PROMPT/binary>>
+		error:{badmatch, _} -> lager:error("Bad arguments"), <<"Wrong amount of bet parameters. Exactly 3 parameters are expected.\r\n">>;
+		throw:badgameid 	-> lager:error("Bad game ID"), <<"Wrong game ID.\r\n">>;
+		throw:badplayerid 	-> lager:error("Bad player ID"), <<"Wrong player ID.\r\n">>;
+		throw:badbinnum		-> lager:error("Bet not a number"), <<"Wrong bet number.\r\n">>;
+		throw:negativebet	-> lager:error("Not positive Bet"), <<"You bet not positive amount\r\n">>;
+		throw:bigbet		-> lager:error("The player has not enough money to bet"), <<"You don't have enough money\r\n">>
 	end.
 
 handle_list() ->
