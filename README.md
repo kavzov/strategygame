@@ -1,7 +1,44 @@
 # xGlade
 _Simple console strategy game_  
-## Start
-`telnet host port`
+To play the game:  
+- Pull down database, regserver and game images:  
+`docker pull kavzov/xgladedb`  
+`docker pull kavzov/xglade_regserver`  
+`docker pull kavzov/xglade_game`  
+- Run it:  
+`docker run --rm -d -p 5432:5432 --name xgladedb kavzov/xgladedb`  
+`docker run --rm -d -p 8000:8000 --link xgladedb:localhost kavzov/xglade_regserver`  
+`docker run --rm -dt -p 1234:1234 --link xgladedb:localhost kavzov/xglade_game`  
+
+---
+
+Use next API in your terminal:  
+```
+"create user": "http://localhost:8000/api/user/create",
+"current user details": "http://localhost:8000/api/user/me",
+"get token": "http://localhost:8000/api/token/get",
+"login": "http://localhost:8000/api/user/login",
+"logout": "http://localhost:8000/api/user/logout",
+"root": "http://localhost:8000/",
+"set password": "http://localhost:8000/api/user/password",
+"set username": "http://localhost:8000/api/user/username",
+"users list": "http://localhost:8000/api/users"
+```  
+You may use curl, httpie, etc.   
+For example, to register, type:  
+`http http://localhost:8000/api/user/create username=your_nickname password=your_password`  
+You'll receive a token to authenticate on game server and manipulate your account data on the regserver:  
+```
+{
+    "email":"",
+    "username":"your_nickname",
+    "id":42,
+    "token":"36be62a4d1b2557bef6a826ea90fe73cdacc210f"
+}
+```  
+
+Next, type in terminal:  
+`telnet localhost 1234`  
 ```
 Hi! It's xGlade game.
 Authenticate and play or go out)
@@ -12,13 +49,15 @@ Authenticate and play or go out)
 +---------------------------+
 | exit       | go out       |
 +---------------------------+
-```
-_Token_  can be obtained after registration (_comming soon_)  
+```  
+Type:  
+`auth 36be62a4d1b2557bef6a826ea90fe73cdacc210f`  
+And you'll come to the game server:  
 ```
 +======================================================+
 | Command   | Action                                   |
 +======================================================+
-| i         | current player info (rating, money, ...) |
+| me        | current player info (rating, money, ...) |
 +------------------------------------------------------+
 | games     | waiting players and active games         |
 +------------------------------------------------------+
