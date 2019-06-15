@@ -106,6 +106,7 @@ You'll receive a token to authenticate on a game server and manipulate your acco
     "token":"36be62a4d1b2557bef6a826ea90fe73cdacc210f"
 }
 ```  
+---
 ## Game server
 To get to the game server, type in terminal:  
 ```telnet localhost 1234```
@@ -164,6 +165,7 @@ If your account has enough funds, it will be charged $10.
   
 If the player you bet on wins, you will receive the winnings to your account.
   
+---
 ## Battle
 A battle glade may has different dimensions from 3 to 10 fields by width or height.   
 Initial state of 4x4 battle field:
