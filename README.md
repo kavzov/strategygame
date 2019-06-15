@@ -208,7 +208,7 @@ Player 'A' lost the game.
 ## TODO  
 ~~registration server (Python, Django, DRF)~~  
 ~~web interface~~  
-REFACTORING
+REFACTORING  
 log files  
 save battle moves history  
 initial random closed fields  
