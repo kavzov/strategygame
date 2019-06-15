@@ -93,8 +93,10 @@ _Change password:_
 ```
   
 You may use curl, httpie, Postman, etc.   
+  
 For example, to register a new user using httpie, type:  
 ```http http://localhost:8000/api/user/create username=your_nickname password=your_password```  
+  
 You'll receive a token to authenticate on a game server and manipulate your account data on the regserver:  
 ```
 {
@@ -200,7 +202,7 @@ Player 'A' lost the game.
 | ← | left  | a |
 +---+-------+---+
 ```
-
+---
 ## TODO  
 ~~registration server (Python, Django, DRF)~~  
 ~~web interface~~  
