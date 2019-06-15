@@ -126,10 +126,37 @@ To authenticate, type:
 ```> auth 36be62a4d1b2557bef6a826ea90fe73cdacc210f```  
 You'll get to the game server.  
   
-There will be information about other players waiting for the opponent and you may join to it and start battle.  
+There will be information about other players waiting for an opponent and you may start battle with one of them.  
   
-Also there will be info about the games taking place at the moment and odds for every player, so you can bet on any player and maybe get some money)  
+Also there will be info about the games taking place at the moment and odds for every player, so you can bet on any player and maybe earn some money)  
 ```
+-----------------------------------------------
+Welcome, your_username!
+You participated in 25 battles. Won in 18.
+Your rating - 72. Position in the championship - 7.
+-----------------------------------------------
+
+Waiting players:
+====================
+Game ID: 9
+Player: olga
+Rating: 88
+Board size: 7 x 5
+--------------------
+Game ID: 12
+Player: bill
+Rating: 50
+Board size: 3 x 4
+--------------------
+
+Running games available for bets:
+===================================
+5. Game 4 x 5
+--------------
+3. kate. Won 22 battles from 28. Rating: 78, Coef: 1.3700
+7. maya. Won 12 battles from 20. Rating: 63, Coef: 1.9265
+===================================
+
 +======================================================+
 | Command   | Action                                   |
 +======================================================+
@@ -155,8 +182,8 @@ and so you'll start a game with field width 4 and height 4 also.
   
 You need to wait until another user joins the game you just started.  
   
-To **join the game** ID 5, type:  
-```> play 5```  
+To **join the game** ID 12, type:  
+```> play 12```  
 and so you'll start a battle against another player.  
   
 To **make a bet** $10 on the player ID 7 taking part at the game ID 5, type  
