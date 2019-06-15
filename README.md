@@ -149,17 +149,17 @@ Also there will be info about the games taking place at the moment and odds for 
 | exit      | leave the server                         |
 +------------------------------------------------------+
 ```
-To start a new game you may type:  
+To **start a new game** you may type:  
 ```> game 4 4```  
 and so you'll start a game with field width 4 and height 4 also.  
   
 You need to wait until another user joins the game you just started.  
   
-To join to other game with ID 5, type:  
+To **join the game** ID 5, type:  
 ```> play 5```  
 and so you'll start a battle against another player.  
   
-To make a bet $10 on the player ID 7 taking part at the game ID 5, type  
+To **make a bet** $10 on the player ID 7 taking part at the game ID 5, type  
 ```> bet 7 5 10```  
 If your account has enough funds, it will be charged $10.  
   
