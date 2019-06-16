@@ -7,7 +7,7 @@ _Simple console strategy game_
 
 ---
 ### Start:  
-Pull the database server, the register server and the game server images and run them:  
+Pull the database server, the register server, the game server images and run them:  
 ```docker pull kavzov/xglade_db_server```  
 ```docker pull kavzov/xglade_reg_server```  
 ```docker pull kavzov/xglade_game_server```  
@@ -18,8 +18,7 @@ Pull the database server, the register server and the game server images and run
 
 ---
 
-### API:  
-Regserver API:  
+### Regserver API:  
   
 _Register user:_  
 ```
