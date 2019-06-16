@@ -2,18 +2,21 @@
 _Simple console strategy game_  
 
 ---
-- Pull down database server, register server and game server images:  
-`docker pull kavzov/xgladedb`  
-`docker pull kavzov/xglade_regserver`  
-`docker pull kavzov/xglade_game`  
-- Run it:  
-`docker run --rm -d -p 5432:5432 --name xgladedb kavzov/xgladedb`  
-`docker run --rm -d -p 8000:8000 --link xgladedb:localhost kavzov/xglade_regserver`  
-`docker run --rm -dt -p 1234:1234 --link xgladedb:localhost kavzov/xglade_game`  
+### Start:  
+Pull the database server, the register server and the game server images and run them:  
+```docker pull kavzov/xglade_db_server```  
+```docker pull kavzov/xglade_reg_server```  
+```docker pull kavzov/xglade_game_server```  
+  
+```docker run --rm -d -p 5432:5432 --name xglade_db_server kavzov/xglade_db_server```  
+```docker run --rm -d -p 8000:8000 --link xglade_db_server:localhost kavzov/xglade_reg_server```  
+```docker run --rm -dt -p 1234:1234 --link xglade_db_server:localhost kavzov/xglade_game_server```  
 
 ---
 
 ### API:  
+API for use on a regserver:  
+  
 _Register user:_  
 ```
 +---------+--------------------------------------------+
@@ -21,16 +24,6 @@ _Register user:_
 | method  | POST                                       |
 | headers | Content-Type: application/json             |
 | data    | username, password                         |
-+---------+--------------------------------------------+
-```
-_Current user details:_  
-```
-+---------+--------------------------------------------+
-| url     | http://localhost:8000/api/user/me          |
-| method  | GET                                        |
-| headers | Content-Type: application/json             |
-|         | Authorization: Token token                 |
-| data    |                                            |
 +---------+--------------------------------------------+
 ```
 _Login:_  
@@ -59,6 +52,26 @@ _Get token:_
 | method  | POST                                       |
 | headers | Content-Type: application/json             |
 | data    | username, password                         |
++---------+--------------------------------------------+
+```
+_Current user details:_  
+```
++---------+--------------------------------------------+
+| url     | http://localhost:8000/api/user/me          |
+| method  | GET                                        |
+| headers | Content-Type: application/json             |
+|         | Authorization: Token token                 |
+| data    |                                            |
++---------+--------------------------------------------+
+```
+_A user details:_  
+```
++---------+--------------------------------------------+
+| url     | http://localhost:8000/api/user/{userID}    |
+| method  | GET                                        |
+| headers | Content-Type: application/json             |
+|         | Authorization: Token token                 |
+| data    |                                            |
 +---------+--------------------------------------------+
 ```
 _Users:_  
@@ -109,7 +122,8 @@ You'll receive a token to authenticate on a game server and manipulate your acco
 ---
 ## Game server
 To get to the game server, type in terminal:  
-```telnet localhost 1234```
+```telnet localhost 1234```  
+You'll see next info:  
 ```
 Hi! It's xGlade game.
 Authenticate and play or go out)
@@ -123,15 +137,21 @@ Authenticate and play or go out)
 > 
 ```  
 To authenticate, type:  
+```> auth Token```  
+`Token` -- a token you got after login the regserver  
+  
+For example,  
 ```> auth 36be62a4d1b2557bef6a826ea90fe73cdacc210f```  
 You'll get to the game server.  
   
-There will be information about other players waiting for an opponent and you may start battle with one of them.  
+There will be info about other players, waiting for opponents, and you may start battle with any of them.  
   
-Also there will be info about the games taking place at the moment and odds for every player, so you can bet on any player and maybe earn some money)  
+Also there will be info about the games taking place at the moment and odds for every player in the games, so you can bet on a win of any of them and maybe earn some money)  
+  
+For example,  
 ```
 -----------------------------------------------
-Welcome, your_username!
+Welcome, alex!
 You participated in 25 battles. Won in 18.
 Your rating - 72. Position in the championship - 7.
 -----------------------------------------------
@@ -178,7 +198,7 @@ Running games available for bets:
 ```
 To **start a new game** you may type:  
 ```> game 4 4```  
-and so you'll start a game with field width 4 and height 4 also.  
+and so you'll start a game with battle glade width 4 and height 4 also.  
   
 You need to wait until another user joins the game you just started.  
   
@@ -194,8 +214,8 @@ If the player you bet on wins, you will receive the winnings to your account.
   
 ---
 ## Battle
-A battle glade may has different dimensions from 3 to 10 fields by width or height.   
-Initial state of 4x4 battle field:
+A battle glade has rectangle form and may has different dimensions from 3 to 10 fields by width or height.   
+For example, initial state of 4x4 battle field:
 ```
 +---+---+---+---+
 | A |   |   |   |
@@ -241,3 +261,4 @@ save battle moves history
 initial random closed fields  
 multiplayer mode  
 achivements  
+bots  
