@@ -1,7 +1,8 @@
 # xGlade  
 _Simple console strategy game_  
   
-[Regserver API](https://github.com/kavzov/xGlade_strategy_game#api)  
+[Start](https://github.com/kavzov/xGlade_strategy_game#start)  
+[Regserver](https://github.com/kavzov/xGlade_strategy_game#regserver)  
 [Game server](https://github.com/kavzov/xGlade_strategy_game#game-server)  
 [Battle](https://github.com/kavzov/xGlade_strategy_game#battle)  
 
@@ -18,7 +19,9 @@ Pull the database server, the register server, the game server images and run th
 
 ---
 
-### Regserver API:  
+### Regserver
+[GitHub](https://github.com/kavzov/xGlade_regserver)
+#### API:  
   
 _Register user:_  
 ```
